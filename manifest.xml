@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RenoiseScriptingTool doc_version="0">
+  <Name>Strum</Name>
+  <Id>mom.MOMarmalade.Strum</Id>
+  <Version>0.1.1</Version>
+  <ApiVersion>6.1</ApiVersion>
+  <Author>MOMarmalade [xephyrpanda@yahoo.com]</Author>
+  <Category>Pattern Editor, Note, Helper, Chord, Strum</Category>
+  <Description>A tool to create flourishes, strums, arpeggios, ripples, etc.</Description>
+  <Homepage>https://xephyrpanda.wixsite.com/citrus64</Homepage>
+  <Platform/>
+  <Icon/>
+</RenoiseScriptingTool>
