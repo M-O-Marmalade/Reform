@@ -38,9 +38,16 @@ local column_to_end_on_in_first_track
 local notes_in_selection = {}
 local total_delay_range
 
+local column_flags = {
+  true, --vol
+  true, --pan
+  true  --fx
+}
 
+local overflow_flag = true
+local condense_flag = true
 
-local time
+local time = 1
 local time_max = 4
 
 local time_multiplier = 1
@@ -49,6 +56,7 @@ local time_multiplier_max = 64
 --CLEAR VARIABLES------------------------------
 local function clear_variables()
 
+  song = renoise.song()
   visible_note_columns = {}
   notes_in_selection = {}
   
@@ -89,9 +97,7 @@ end
 
 --FIND NOTES IN SELECTION---------------------------------------------
 local function find_notes_in_selection()
-  
-  song = renoise.song()
-  
+
   --get selection
   selected_seq = song.selected_sequence_index
   selected_pattern = song.sequencer:pattern(selected_seq)
@@ -102,10 +108,10 @@ local function find_notes_in_selection()
     return(false)
   end
   
-  --determine which columns are visible
+  --determine which note columns are visible
   for t = selection.start_track, selection.end_track do  
     visible_note_columns[t] = song:track(t).visible_note_columns     
-  end  
+  end
     
   --find out what column to end on when working in the first track, based on how many tracks are selected total
   if selection.end_track - selection.start_track == 0 then
@@ -167,25 +173,30 @@ end
 --CALCULATE SINGLE NOTE PLACEMENT------------------------------------------
 local function calculate_single_note_placement(p,t,c,l)
 
-  if notes_in_selection[p][t][c][l] then 
-  
-    if debugvars.create_note_offs_on_calculate_single_note then
-      create_note_off(p,t,c,l)
-    end
-    
-    local line_difference = l - selection.start_line
-    
-    local delay_difference = notes_in_selection[p][t][c][l][5] + (line_difference*256)
-    
-    local note_place = delay_difference / total_delay_range
-    
-    notes_in_selection[p][t][c][l][8] = note_place
-    
-    if debugvars.print_note_placements then
-      print(("pattern %i, track %i, column %i, line %i, placement: %f"):format(p,t,c,l,note_place))
-    end    
+  --check if this note was empty/nil, and if so, return from this function without doing anything
+  if not notes_in_selection[p] or
+  not notes_in_selection[p][t] or
+  not notes_in_selection[p][t][c] or
+  not notes_in_selection[p][t][c][l] then
+    return
   end
+
+  if debugvars.create_note_offs_on_calculate_single_note then
+    create_note_off(p,t,c,l)
+  end
+    
+  local line_difference = l - selection.start_line
   
+  local delay_difference = notes_in_selection[p][t][c][l][5] + (line_difference*256)
+  
+  local note_place = delay_difference / total_delay_range
+    
+  notes_in_selection[p][t][c][l][8] = note_place
+    
+  if debugvars.print_note_placements then
+    print(("pattern %i, track %i, column %i, line %i, placement: %f"):format(p,t,c,l,note_place))
+  end    
+    
   return(true)
 end
 
@@ -225,35 +236,60 @@ end
 --PLACE NEW NOTE----------------------------------------------
 local function place_new_note(p,t,c,l)
   
-  if notes_in_selection[p][t][c][l] then
+  --check if this note was empty/nil, and if so, return from this function without doing anything
+  if not notes_in_selection[p] or
+  not notes_in_selection[p][t] or
+  not notes_in_selection[p][t][c] or
+  not notes_in_selection[p][t][c][l] then
+    return
+  end
   
-    local new_placement = notes_in_selection[p][t][c][l][8] * (time * time_multiplier + 1)
+  --calculate the indexes where the new note will be, based on its placement value
+  local new_placement = notes_in_selection[p][t][c][l][8] * (time * time_multiplier + 1)
     
-    local new_delay_difference = new_placement*total_delay_range
+  local new_delay_difference = new_placement*total_delay_range
+   
+  local new_line_difference = math.floor(new_delay_difference / 256)
     
-    local new_line_difference = math.floor(new_delay_difference / 256)
+  local new_delay_value = new_delay_difference%256
     
-    local new_delay_value = new_delay_difference%256
-    
-    local new_line = selection.start_line + new_line_difference
+  local new_line = selection.start_line + new_line_difference
   
-    local column = song:pattern(p):track(t):line(new_line):note_column(c)
+  local column = song:pattern(p):track(t):line(new_line):note_column(c)
   
-    column.note_value = notes_in_selection[p][t][c][l][1]
-    column.instrument_value = notes_in_selection[p][t][c][l][2]
-    column.volume_value = notes_in_selection[p][t][c][l][3]
-    column.panning_value = notes_in_selection[p][t][c][l][4]
-    column.delay_value = new_delay_value
-    column.effect_number_value = notes_in_selection[p][t][c][l][6]
-    column.effect_amount_value = notes_in_selection[p][t][c][l][7]
-    
-    if debugvars.print_new_note_placements then
-      print(("pattern %i, track %i, column %i, line %i, new placement: %f"):format(p,t,c,l, new_placement))
+  --if overflow is on, then push notes out to empty columns when available
+  if overflow_flag then
+    local i = 1
+    while not column.is_empty do
+      if c+i > 12 then break end
+      column = song:pattern(p):track(t):line(new_line):note_column(c+i)
+      i = i + 1
     end
+  end
   
+  --if condense is on, then pull notes in to empty columns when available
+  if condense_flag then
+    local i = 1
+    while column.is_empty do
+      if c-i < 1 or not song:pattern(p):track(t):line(new_line):note_column(c-i).is_empty then break end
+      column = song:pattern(p):track(t):line(new_line):note_column(c-i)
+      i = i + 1
+    end
+  end
+  
+  --place the note
+  column.note_value = notes_in_selection[p][t][c][l][1]
+  column.instrument_value = notes_in_selection[p][t][c][l][2]
+  if column_flags[1] then column.volume_value = notes_in_selection[p][t][c][l][3] end
+  if column_flags[2] then column.panning_value = notes_in_selection[p][t][c][l][4] end
+  column.delay_value = new_delay_value
+  if column_flags[3] then column.effect_number_value = notes_in_selection[p][t][c][l][6] end
+  if column_flags[3] then column.effect_amount_value = notes_in_selection[p][t][c][l][7] end
+    
+  if debugvars.print_new_note_placements then
+    print(("pattern %i, track %i, column %i, line %i, new placement: %f"):format(p,t,c,l, new_placement))
   end
 
-  return(true)
 end
 
 --STRUM SELECTION------------------------------------------
@@ -262,32 +298,38 @@ local function strum_selection()
   if debugvars.clear_pattern_one then
     song:pattern(1):clear()
   end
-
-  --work on first track--
+  
+  --WORK ON FIRST TRACK--
   for c = selection.start_column, column_to_end_on_in_first_track do
     for l = selection.start_line, selection.end_line do
       place_new_note(selected_pattern,selection.start_track,c,l)
     end
   end
+  --show delay column for this track
+  song:track(selection.start_track).delay_column_visible = true
   
-  --work on middle tracks--
+  --WORK ON MIDDLE TRACKS (if there are more than two tracks)--  
   if selection.end_track - selection.start_track > 1 then
     for t = selection.start_track + 1, selection.end_track - 1 do
       for c = 1, visible_note_columns[t] do
         for l = selection.start_line, selection.end_line do
           place_new_note(selected_pattern,t,c,l)     
         end      
-      end    
+      end 
+      --show delay column for each middle track
+      song:track(t).delay_column_visible = true   
     end
   end
   
-  --work on last track--
+  --WORK ON LAST TRACK (if there is more than one track)--
   if selection.end_track - selection.start_track > 0 then
     for c = 1, math.min(selection.end_column, visible_note_columns[selection.end_track]) do
       for l = selection.start_line, selection.end_line do
         place_new_note(selected_pattern,selection.end_track,c,l)   
       end
     end
+    --show delay column for this track
+    song:track(selection.end_track).delay_column_visible = true  
   end
 
   return(true)
@@ -309,7 +351,7 @@ local function show_window()
       width = sliders_width, 
       height = sliders_height, 
       notifier = function(value)
-        time = value
+        time = -value
         strum_selection()
       end    
       },
@@ -326,7 +368,58 @@ local function show_window()
           time_multiplier = value
           strum_selection()
         end 
-      }      
+      },
+        
+      vb:checkbox { 
+        id = "vol_flag_checkbox", 
+        tooltip = "Volume Flag",
+        value = true, 
+        notifier = function(value) 
+          column_flags[1] = value
+          strum_selection()
+        end 
+      },
+      
+      vb:checkbox { 
+        id = "pan_flag_checkbox", 
+        tooltip = "Panning Flag",
+        value = true, 
+        notifier = function(value) 
+          column_flags[2] = value
+          strum_selection()
+        end 
+      },
+      
+      vb:checkbox { 
+        id = "fx_flag_checkbox", 
+        tooltip = "FX Flag",
+        value = true, 
+        notifier = function(value) 
+          column_flags[3] = value
+          strum_selection()
+        end 
+      },
+      
+      vb:checkbox { 
+        id = "overflow_flag_checkbox", 
+        tooltip = "Overflow Flag",
+        value = true, 
+        notifier = function(value) 
+          overflow_flag = value
+          strum_selection()
+        end 
+      },
+      
+      vb:checkbox { 
+        id = "condense_flag_checkbox", 
+        tooltip = "Condense Flag",
+        value = true, 
+        notifier = function(value) 
+          condense_flag = value
+          strum_selection()
+        end 
+      }  
+          
     }
   end
   
