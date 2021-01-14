@@ -7,10 +7,6 @@ if debugmode then
 end
 
 local debugvars = {
-  create_note_offs_on_find = false,
-  create_note_offs_on_calculate_single_note = false,
-  print_note_placements = false,
-  print_new_note_placements = false,
   clear_pattern_one = true
 }
 
@@ -31,6 +27,9 @@ local multipliers_size = 23
 local selected_seq
 local selected_pattern
 local selection
+local valid_selection = false
+local pattern_lengths = {} --an array of []{length, valid}
+local seq_length = { length = 0, valid = false }
 
 local visible_note_columns = {}
 local column_to_end_on_in_first_track
@@ -53,10 +52,34 @@ local time_max = 4
 local time_multiplier = 1
 local time_multiplier_max = 64
 
+  
+--NEW DOCUMENT------------------------------------------
+local function new_document()
+
+  song = renoise.song()
+  
+  --invalidate selection
+  valid_selection = false
+  
+  --invalidate all recorded pattern lengths
+  for k, v in pairs(pattern_lengths) do
+    v = nil
+  end
+  
+  --invalidate recorded sequence length
+  seq_length.valid = false
+  
+end
+
 --CLEAR VARIABLES------------------------------
 local function clear_variables()
 
-  song = renoise.song()
+  --add document release notifier if it doesn't exist yet
+  if not tool.app_new_document_observable:has_notifier(new_document) then
+    tool.app_new_document_observable:add_notifier(new_document)
+  end
+  
+  if not song then song = renoise.song() end
   visible_note_columns = {}
   notes_in_selection = {}
   
@@ -105,7 +128,10 @@ local function find_notes_in_selection()
   
   if not selection then
     app:show_error("no selection has been made")
+    valid_selection = false
     return(false)
+  else
+    valid_selection = true
   end
   
   --determine which note columns are visible
@@ -123,11 +149,7 @@ local function find_notes_in_selection()
   --work on first track--
   for c = selection.start_column, column_to_end_on_in_first_track do
     for l = selection.start_line, selection.end_line do
-      store_note(selected_pattern,selection.start_track,c,l) 
-      
-      if debugvars.create_note_offs_on_find then
-        create_note_off(selected_pattern,selection.start_track,c,l)
-      end           
+      store_note(selected_pattern,selection.start_track,c,l)       
     end
   end
   
@@ -136,11 +158,7 @@ local function find_notes_in_selection()
     for t = selection.start_track + 1, selection.end_track - 1 do
       for c = 1, visible_note_columns[t] do
         for l = selection.start_line, selection.end_line do
-          store_note(selected_pattern,t,c,l)   
-          
-          if debugvars.create_note_offs_on_find then
-            create_note_off(selected_pattern,t,c,l)
-          end          
+          store_note(selected_pattern,t,c,l)  
         end      
       end    
     end
@@ -150,14 +168,12 @@ local function find_notes_in_selection()
   if selection.end_track - selection.start_track > 0 then
     for c = 1, math.min(selection.end_column, visible_note_columns[selection.end_track]) do
       for l = selection.start_line, selection.end_line do
-        store_note(selected_pattern,selection.end_track,c,l) 
-        
-        if debugvars.create_note_offs_on_find then
-          create_note_off(selected_pattern,selection.end_track,c,l)
-        end        
+        store_note(selected_pattern,selection.end_track,c,l)    
       end
     end
   end
+  
+  
   
   return(true)
 end
@@ -180,10 +196,6 @@ local function calculate_single_note_placement(p,t,c,l)
   not notes_in_selection[p][t][c][l] then
     return
   end
-
-  if debugvars.create_note_offs_on_calculate_single_note then
-    create_note_off(p,t,c,l)
-  end
     
   local line_difference = l - selection.start_line
   
@@ -192,10 +204,6 @@ local function calculate_single_note_placement(p,t,c,l)
   local note_place = delay_difference / total_delay_range
     
   notes_in_selection[p][t][c][l][8] = note_place
-    
-  if debugvars.print_note_placements then
-    print(("pattern %i, track %i, column %i, line %i, placement: %f"):format(p,t,c,l,note_place))
-  end    
     
   return(true)
 end
@@ -233,6 +241,129 @@ local function calculate_note_placements()
   return(true)
 end
 
+--ADD PATTERN LENGTH NOTIFIER-----------------------------------
+local function add_pattern_length_notifier(p)
+
+  --define the notifier function
+  local function pattern_length_notifier()
+
+    print(("pattern %i's length notifier has been triggered!!"):format(p))
+  
+    pattern_lengths[p].valid = false
+  
+    song.patterns[p].number_of_lines_observable:remove_notifier(pattern_length_notifier)
+    
+  end
+  
+  --then add it to the pattern in question
+  song.patterns[p].number_of_lines_observable:add_notifier(pattern_length_notifier)
+
+end
+
+--GET PATTERN LENGTH AT SEQ-----------------------------------------
+local function get_pattern_length_at_seq(s)
+  
+  --convert the sequence index to a pattern index
+  local p = song.sequencer:pattern(s)
+  
+  --create an entry for this pattern if there is none yet
+  if not pattern_lengths[p] then  
+    pattern_lengths[p] = {}
+  end
+  
+  --update our records of this pattern's length if we don't have the valid data for it
+  if not pattern_lengths[p].valid then
+    pattern_lengths[p].length = song.patterns[p].number_of_lines
+    pattern_lengths[p].valid = true  
+    
+    --add our notifier to invalidate our recorded pattern length if this pattern's length changes
+    add_pattern_length_notifier(p)
+  end
+  
+  return(pattern_lengths[s].length)
+end
+
+--SEQUENCE COUNT NOTIFIER---------------------------------------------------
+local function sequence_count_notifier()
+
+  print("sequence count notifier has been triggered!!")
+  
+  seq_length.valid = false
+  
+  song.sequencer.pattern_sequence_observable:remove_notifier(sequence_count_notifier)
+  
+end
+
+--GET SEQUENCE LENGTH-------------------------------------
+local function get_sequence_length()
+
+  if not seq_length.valid then
+    seq_length.length = #song.sequencer.pattern_sequence
+    seq_length.valid = true
+    
+    --add our notifier to invalidate our recorded seq length if the sequence length changes
+    song.sequencer.pattern_sequence_observable:add_notifier(sequence_count_notifier)
+  end
+  
+  return(seq_length.length)
+end
+
+--FIND CORRECT INDEX---------------------------------------
+local function find_correct_index(s,p,t,c,l)
+  
+  --find the correct sequence if our line index lies before or after the bounds of this pattern
+  if l < 1 then  
+    while l < 1 do
+    
+      --decrement the sequence index (with wrap-around)
+      s = (s - 1) % get_sequence_length()
+      if s == 0 then s = get_sequence_length() end
+        
+      --update our line index
+      l = l + get_pattern_length_at_seq(s)
+        
+    end  
+  elseif l > get_pattern_length_at_seq(s) then
+    while true do
+      
+      --update our line index
+      l = l - get_pattern_length_at_seq(s)
+      
+      --increment the sequence index (with wrap-around)
+      s = (s + 1) % get_sequence_length()
+      if s == 0 then s = get_sequence_length() end
+            
+      --break the loop if we find a valid line index
+      if l <= get_pattern_length_at_seq(s) then break end
+            
+    end      
+  end
+  
+  p = song.sequencer:pattern(s)
+  
+  local column
+  --if overflow is on, then push notes out to empty columns when available
+  if overflow_flag then
+    while true do
+      if c == 12 then break
+      elseif song:pattern(p):track(t):line(l):note_column(c).is_empty then break
+      else c = c + 1 end
+    end
+  end
+  
+  --if condense is on, then pull notes in to empty columns when available
+  if condense_flag then
+    while true do
+      if c == 1 then break
+      elseif not song:pattern(p):track(t):line(l):note_column(c-1).is_empty then break
+      else c = c + 1 end
+    end
+  end
+  
+  --return the note column we need
+  return(song:pattern(p):track(t):line(l):note_column(c))
+end
+
 --PLACE NEW NOTE----------------------------------------------
 local function place_new_note(p,t,c,l)
   
@@ -255,27 +386,7 @@ local function place_new_note(p,t,c,l)
     
   local new_line = selection.start_line + new_line_difference
   
-  local column = song:pattern(p):track(t):line(new_line):note_column(c)
-  
-  --if overflow is on, then push notes out to empty columns when available
-  if overflow_flag then
-    local i = 1
-    while not column.is_empty do
-      if c+i > 12 then break end
-      column = song:pattern(p):track(t):line(new_line):note_column(c+i)
-      i = i + 1
-    end
-  end
-  
-  --if condense is on, then pull notes in to empty columns when available
-  if condense_flag then
-    local i = 1
-    while column.is_empty do
-      if c-i < 1 or not song:pattern(p):track(t):line(new_line):note_column(c-i).is_empty then break end
-      column = song:pattern(p):track(t):line(new_line):note_column(c-i)
-      i = i + 1
-    end
-  end
+  local column = find_correct_index(selected_seq,p,t,c,new_line)
   
   --place the note
   column.note_value = notes_in_selection[p][t][c][l][1]
@@ -285,11 +396,7 @@ local function place_new_note(p,t,c,l)
   column.delay_value = new_delay_value
   if column_flags[3] then column.effect_number_value = notes_in_selection[p][t][c][l][6] end
   if column_flags[3] then column.effect_amount_value = notes_in_selection[p][t][c][l][7] end
-    
-  if debugvars.print_new_note_placements then
-    print(("pattern %i, track %i, column %i, line %i, new placement: %f"):format(p,t,c,l, new_placement))
-  end
-
+  
 end
 
 --STRUM SELECTION------------------------------------------
@@ -297,6 +404,11 @@ local function strum_selection()
 
   if debugvars.clear_pattern_one then
     song:pattern(1):clear()
+  end
+  
+  if not valid_selection then
+    app:show_error("There is no valid selection to operate on!")
+    return(false)
   end
   
   --WORK ON FIRST TRACK--
@@ -433,7 +545,8 @@ local function show_window()
 end
 
 --SELECTION-BASED STRUM-----------------------------------------------
-local function selection_based_strum()
+local function resize_selection()
+      
   local result = clear_variables()
   if result then result = find_notes_in_selection() end
   if result then result = calculate_range() end
@@ -445,6 +558,6 @@ end
 --MENU/HOTKEY ENTRIES-------------------------------------------------------------------------------- 
 
 renoise.tool():add_menu_entry { 
-  name = "Main Menu:Tools:Strum Selection...", 
-  invoke = function() selection_based_strum() end 
+  name = "Main Menu:Tools:Resize Selection...", 
+  invoke = function() resize_selection() end 
 }
