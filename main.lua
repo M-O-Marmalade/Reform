@@ -7,7 +7,9 @@ if debugmode then
 end
 
 local debugvars = {
-  clear_pattern_one = true
+  clear_pattern_one = true,
+  print_notifier_attachments = true,
+  print_notifier_triggers = true
 }
 
 --GLOBALS-------------------------------------------------------------------------------------------- 
@@ -16,81 +18,128 @@ local tool = renoise.tool()
 local song = nil
 
 local vb = renoise.ViewBuilder() 
-local window_obj = nil
-local window_title = "Strum" 
-local window_content = nil 
-local default_margin = 0
-local sliders_width = 22
-local sliders_height = 127
-local multipliers_size = 23
+local vb_data = {
+  window_obj = nil,
+  window_title = "Strum",
+  window_content = nil,
+  default_margin = 0,
+  sliders_width = 22,
+  sliders_height = 127,
+  multipliers_size = 23,
+}
 
+local selection
+local valid_selection
 local selected_seq
 local selected_pattern
-local selection
-local valid_selection = false
-local pattern_lengths = {} --an array of []{length, valid}
-local seq_length = { length = 0, valid = false }
-
 local visible_note_columns = {}
 local column_to_end_on_in_first_track
-
 local notes_in_selection = {}
 local total_delay_range
 
-local column_flags = {
-  true, --vol
-  true, --pan
-  true  --fx
+local resize_flags = {
+  vol = true,
+  pan = true,
+  fx = true,
+  overflow = true,
+  condense = false
 }
 
-local overflow_flag = true
-local condense_flag = true
+local pattern_lengths = {} --an array of []{length, valid, notifier}
+local seq_length = { length = 0, valid = false }
 
-local time = 1
-local time_max = 4
+local time = 0
+local time_min = -1
+local time_max = 1
 
 local time_multiplier = 1
+local time_multiplier_min = 1
 local time_multiplier_max = 64
 
-  
---NEW DOCUMENT------------------------------------------
-local function new_document()
 
-  song = renoise.song()
-  
-  --invalidate selection
-  valid_selection = false
-  
-  --invalidate all recorded pattern lengths
-  for k, v in pairs(pattern_lengths) do
-    v = nil
-  end
-  
-  --invalidate recorded sequence length
-  seq_length.valid = false
-  
-end
-
---CLEAR VARIABLES------------------------------
-local function clear_variables()
-
-  --add document release notifier if it doesn't exist yet
-  if not tool.app_new_document_observable:has_notifier(new_document) then
-    tool.app_new_document_observable:add_notifier(new_document)
-  end
+--RESET VARIABLES------------------------------
+local function reset_variables()
   
   if not song then song = renoise.song() end
   visible_note_columns = {}
   notes_in_selection = {}
   
+  time = 0
+  time_multiplier = 1
+  
+  resize_flags = {
+    vol = true,
+    pan = true,
+    fx = true,
+    overflow = true,
+    condense = false
+  }
+  
   return(true)
 end
 
---CREATE NOTE-OFF--------------------------------
-local function create_note_off(p,t,c,l)
+--RESET VIEW------------------------------------------
+local function reset_view()
 
-  song:pattern(p):track(t):line(l):note_column(c).note_value = 120
+  vb.views.time_slider.value = time
+  vb.views.time_multiplier_rotary.value = time_multiplier
+  vb.views.vol_flag_checkbox.value = resize_flags.vol
+  vb.views.pan_flag_checkbox.value = resize_flags.pan
+  vb.views.fx_flag_checkbox.value = resize_flags.fx
+  vb.views.overflow_flag_checkbox.value = resize_flags.overflow
+  vb.views.condense_flag_checkbox.value = resize_flags.condense
 
+  return(true)
+end
+  
+--RELEASE DOCUMENT------------------------------------------
+local function release_document()
+
+  if debugvars.print_notifier_triggers then print("release document notifier triggered!") end
+  
+  --invalidate selection
+  valid_selection = false
+  
+  --invalidate recorded sequence length
+  seq_length.valid = false
+  
+  --invalidate all recorded pattern lengths
+  for k, v in pairs(pattern_lengths) do    
+    v.valid = false
+  end
+  
+end  
+  
+--NEW DOCUMENT------------------------------------------
+local function new_document()
+
+  if debugvars.print_notifier_triggers then print("new document notifier triggered!") end
+
+  song = renoise.song()
+  
+  reset_variables()
+  reset_view()
+  
+end
+
+--ADD DOCUMENT NOTIFIERS------------------------------------------------
+local function add_document_notifiers()
+
+  --add document release notifier if it doesn't exist yet
+  if not tool.app_release_document_observable:has_notifier(release_document) then
+    tool.app_release_document_observable:add_notifier(release_document)
+    
+    if debugvars.print_notifier_attachments then print("release document notifier attached!") end    
+  end
+
+  --add new document notifier if it doesn't exist yet
+  if not tool.app_new_document_observable:has_notifier(new_document) then
+    tool.app_new_document_observable:add_notifier(new_document)
+    
+    if debugvars.print_notifier_attachments then print("new document notifier attached!") end    
+  end  
+
+  return(true)
 end
 
 --STORE NOTE--------------------------------------------
@@ -246,10 +295,15 @@ local function add_pattern_length_notifier(p)
 
   --define the notifier function
   local function pattern_length_notifier()
-
-    print(("pattern %i's length notifier has been triggered!!"):format(p))
-  
+    
+    if debugvars.print_notifier_triggers then
+      print(("pattern %i's length notifier triggered!!"):format(p))
+    end
+    
     pattern_lengths[p].valid = false
+    
+    --remove it from our record of which pattern length notifiers we currently have attached
+    pattern_lengths[p].notifier = false
   
     song.patterns[p].number_of_lines_observable:remove_notifier(pattern_length_notifier)
     
@@ -257,6 +311,9 @@ local function add_pattern_length_notifier(p)
   
   --then add it to the pattern in question
   song.patterns[p].number_of_lines_observable:add_notifier(pattern_length_notifier)
+  
+  --add it to our record of which pattern length notifiers we currently have attached
+  pattern_lengths[p].notifier = true
 
 end
 
@@ -278,6 +335,10 @@ local function get_pattern_length_at_seq(s)
     
     --add our notifier to invalidate our recorded pattern length if this pattern's length changes
     add_pattern_length_notifier(p)
+    
+    if debugvars.print_notifier_attachments then
+      print(("pattern %i's length notifier attached!!"):format(p))
+    end
   end
   
   return(pattern_lengths[s].length)
@@ -285,8 +346,8 @@ end
 
 --SEQUENCE COUNT NOTIFIER---------------------------------------------------
 local function sequence_count_notifier()
-
-  print("sequence count notifier has been triggered!!")
+  
+  if debugvars.print_notifier_triggers then print("sequence count notifier triggered!!") end
   
   seq_length.valid = false
   
@@ -303,6 +364,8 @@ local function get_sequence_length()
     
     --add our notifier to invalidate our recorded seq length if the sequence length changes
     song.sequencer.pattern_sequence_observable:add_notifier(sequence_count_notifier)
+    
+    if debugvars.print_notifier_attachments then print("sequence count notifier attached!!") end
   end
   
   return(seq_length.length)
@@ -343,20 +406,27 @@ local function find_correct_index(s,p,t,c,l)
   
   local column
   --if overflow is on, then push notes out to empty columns when available
-  if overflow_flag then
+  if resize_flags.overflow then
     while true do
       if c == 12 then break
       elseif song:pattern(p):track(t):line(l):note_column(c).is_empty then break
       else c = c + 1 end
     end
+    --expand the visible note columns to show the overflowed notes
+    if c > visible_note_columns[t] then 
+      song:track(t).visible_note_columns = c
+    end
+  else
+    --if overflow isn't active, we should only show the columns that were originally visible
+    song:track(t).visible_note_columns = visible_note_columns[t]
   end
   
   --if condense is on, then pull notes in to empty columns when available
-  if condense_flag then
+  if resize_flags.condense then
     while true do
       if c == 1 then break
       elseif not song:pattern(p):track(t):line(l):note_column(c-1).is_empty then break
-      else c = c + 1 end
+      else c = c - 1 end
     end
   end
   
@@ -391,11 +461,11 @@ local function place_new_note(p,t,c,l)
   --place the note
   column.note_value = notes_in_selection[p][t][c][l][1]
   column.instrument_value = notes_in_selection[p][t][c][l][2]
-  if column_flags[1] then column.volume_value = notes_in_selection[p][t][c][l][3] end
-  if column_flags[2] then column.panning_value = notes_in_selection[p][t][c][l][4] end
+  if resize_flags[1] then column.volume_value = notes_in_selection[p][t][c][l][3] end
+  if resize_flags[2] then column.panning_value = notes_in_selection[p][t][c][l][4] end
   column.delay_value = new_delay_value
-  if column_flags[3] then column.effect_number_value = notes_in_selection[p][t][c][l][6] end
-  if column_flags[3] then column.effect_amount_value = notes_in_selection[p][t][c][l][7] end
+  if resize_flags[3] then column.effect_number_value = notes_in_selection[p][t][c][l][6] end
+  if resize_flags[3] then column.effect_amount_value = notes_in_selection[p][t][c][l][7] end
   
 end
 
@@ -451,17 +521,17 @@ end
 local function show_window()
 
   --prepare the window content if it hasn't been done yet
-  if not window_content then    
-    window_content = vb:column {
+  if not vb_data.window_content then    
+    vb_data.window_content = vb:column {
   
       vb:minislider {    
       id = "time_slider", 
       tooltip = "The time over which to spread the notes", 
-      min = -time_max, 
+      min = time_min, 
       max = time_max, 
-      value = 0, 
-      width = sliders_width, 
-      height = sliders_height, 
+      value = time, 
+      width = vb_data.sliders_width, 
+      height = vb_data.sliders_height, 
       notifier = function(value)
         time = -value
         strum_selection()
@@ -469,13 +539,13 @@ local function show_window()
       },
       
       vb:rotary { 
-        id = "time_multiplier", 
+        id = "time_multiplier_rotary", 
         tooltip = "Time multiplier", 
-        min = 1, 
+        min = time_multiplier_min, 
         max = time_multiplier_max, 
-        value = 1, 
-        width = multipliers_size, 
-        height = multipliers_size, 
+        value = time_multiplier, 
+        width = vb_data.multipliers_size, 
+        height = vb_data.multipliers_size, 
         notifier = function(value) 
           time_multiplier = value
           strum_selection()
@@ -487,7 +557,7 @@ local function show_window()
         tooltip = "Volume Flag",
         value = true, 
         notifier = function(value) 
-          column_flags[1] = value
+          resize_flags[1] = value
           strum_selection()
         end 
       },
@@ -497,7 +567,7 @@ local function show_window()
         tooltip = "Panning Flag",
         value = true, 
         notifier = function(value) 
-          column_flags[2] = value
+          resize_flags[2] = value
           strum_selection()
         end 
       },
@@ -507,7 +577,7 @@ local function show_window()
         tooltip = "FX Flag",
         value = true, 
         notifier = function(value) 
-          column_flags[3] = value
+          resize_flags[3] = value
           strum_selection()
         end 
       },
@@ -517,7 +587,7 @@ local function show_window()
         tooltip = "Overflow Flag",
         value = true, 
         notifier = function(value) 
-          overflow_flag = value
+          resize_flags.overflow = value
           strum_selection()
         end 
       },
@@ -527,18 +597,18 @@ local function show_window()
         tooltip = "Condense Flag",
         value = true, 
         notifier = function(value) 
-          condense_flag = value
+          resize_flags.condense = value
           strum_selection()
         end 
-      }  
-          
+      }   
+             
     }
   end
   
   --create/show the dialog window
-  if not window_obj or not window_obj.visible then
-    window_obj = app:show_custom_dialog(window_title, window_content)
-  else window_obj:show()
+  if not vb_data.window_obj or not vb_data.window_obj.visible then
+    vb_data.window_obj = app:show_custom_dialog(vb_data.window_title, vb_data.window_content)
+  else vb_data.window_obj:show()
   end  
   
   return(true)
@@ -547,11 +617,13 @@ end
 --SELECTION-BASED STRUM-----------------------------------------------
 local function resize_selection()
       
-  local result = clear_variables()
+  local result = reset_variables()
   if result then result = find_notes_in_selection() end
   if result then result = calculate_range() end
   if result then result = calculate_note_placements() end
-  if result then result = show_window() end
+  if result then result = add_document_notifiers() end
+  if result then result = show_window() end      
+  if result then result = reset_view() end
 
 end
 
@@ -559,5 +631,10 @@ end
 
 renoise.tool():add_menu_entry { 
   name = "Main Menu:Tools:Resize Selection...", 
+  invoke = function() resize_selection() end 
+}
+
+renoise.tool():add_menu_entry { 
+  name = "Pattern Editor:Resize Selection...", 
   invoke = function() resize_selection() end 
 }
