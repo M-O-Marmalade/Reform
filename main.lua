@@ -7,7 +7,7 @@ if debugmode then
 end
 
 local debugvars = {
-  clear_pattern_one = true,
+  clear_pattern_one = false,
   print_notifier_attachments = true,
   print_notifier_triggers = true
 }
@@ -33,6 +33,7 @@ local valid_selection
 local selected_seq
 local selected_pattern
 local visible_note_columns = {}
+local columns_overflowed_into = {}
 local column_to_end_on_in_first_track
 local notes_in_selection = {}
 local total_delay_range
@@ -61,7 +62,9 @@ local time_multiplier_max = 64
 local function reset_variables()
   
   if not song then song = renoise.song() end
-  visible_note_columns = {}
+  visible_note_columns = {} 
+  columns_overflowed_into = {} 
+  
   notes_in_selection = {}
   
   time = 0
@@ -91,6 +94,44 @@ local function reset_view()
 
   return(true)
 end
+
+--DEACTIVATE CONTROLS-------------------------------------
+local function deactivate_controls()
+
+  vb.views.time_slider.active = false
+  vb.views.time_multiplier_rotary.active = false
+  vb.views.vol_flag_checkbox.active = false
+  vb.views.pan_flag_checkbox.active = false
+  vb.views.fx_flag_checkbox.active = false
+  vb.views.overflow_flag_checkbox.active = false
+  vb.views.condense_flag_checkbox.active = false
+
+  return(true)
+end
+
+--DEACTIVATE CONTROLS-------------------------------------
+local function activate_controls()
+
+  vb.views.time_slider.active = true
+  vb.views.time_multiplier_rotary.active = true
+  vb.views.vol_flag_checkbox.active = true
+  vb.views.pan_flag_checkbox.active = true
+  vb.views.fx_flag_checkbox.active = true
+  vb.views.overflow_flag_checkbox.active = true
+  vb.views.condense_flag_checkbox.active = true
+
+  return(true)
+end
+
+--INVALIDATE SELECTION-------------------------------------
+local function invalidate_selection()
+
+  --invalidate selection
+  valid_selection = false
+  
+  deactivate_controls()
+
+end
   
 --RELEASE DOCUMENT------------------------------------------
 local function release_document()
@@ -98,7 +139,7 @@ local function release_document()
   if debugvars.print_notifier_triggers then print("release document notifier triggered!") end
   
   --invalidate selection
-  valid_selection = false
+  invalidate_selection()
   
   --invalidate recorded sequence length
   seq_length.valid = false
@@ -143,7 +184,7 @@ local function add_document_notifiers()
 end
 
 --STORE NOTE--------------------------------------------
-local function store_note(p,t,c,l)
+local function store_note(s,p,t,c,l)
   
   local column = song:pattern(p):track(t):line(l):note_column(c)
   
@@ -154,21 +195,35 @@ local function store_note(p,t,c,l)
     if not notes_in_selection[p][t][c] then notes_in_selection[p][t][c] = {} end
     if not notes_in_selection[p][t][c][l] then notes_in_selection[p][t][c][l] = {} end
   
-    notes_in_selection[p][t][c][l][1] = column.note_value
-    notes_in_selection[p][t][c][l][2] = column.instrument_value
-    notes_in_selection[p][t][c][l][3] = column.volume_value 
-    notes_in_selection[p][t][c][l][4] = column.panning_value 
-    notes_in_selection[p][t][c][l][5] = column.delay_value 
-    notes_in_selection[p][t][c][l][6] = column.effect_number_value 
-    notes_in_selection[p][t][c][l][7] = column.effect_amount_value 
+    notes_in_selection[p][t][c][l].note_value = column.note_value
+    notes_in_selection[p][t][c][l].instrument_value = column.instrument_value
+    notes_in_selection[p][t][c][l].volume_value = column.volume_value 
+    notes_in_selection[p][t][c][l].panning_value = column.panning_value 
+    notes_in_selection[p][t][c][l].delay_value = column.delay_value 
+    notes_in_selection[p][t][c][l].effect_number_value = column.effect_number_value 
+    notes_in_selection[p][t][c][l].effect_amount_value = column.effect_amount_value
+    
+    --store the location of the note
+    notes_in_selection[p][t][c][l].last_overwritten_ptcl = {p = p, t = t, c = c, l = l}
+    
+    --store empty data to replace its spot when it moves
+    notes_in_selection[p][t][c][l].last_overwritten_values = {
+      note_value = 121,
+      instrument_value = 255,
+      volume_value = 255,
+      panning_value = 255,
+      delay_value = 0,
+      effect_number_value = 0,
+      effect_amount_value = 0
+    }
   
   end
   
   return(true)
 end
 
---FIND NOTES IN SELECTION---------------------------------------------
-local function find_notes_in_selection()
+--GET SELECTION-----------------------------------------
+local function get_selection()
 
   --get selection
   selected_seq = song.selected_sequence_index
@@ -182,6 +237,12 @@ local function find_notes_in_selection()
   else
     valid_selection = true
   end
+
+  return(true)
+end
+
+--FIND NOTES IN SELECTION---------------------------------------------
+local function find_notes_in_selection()
   
   --determine which note columns are visible
   for t = selection.start_track, selection.end_track do  
@@ -198,7 +259,7 @@ local function find_notes_in_selection()
   --work on first track--
   for c = selection.start_column, column_to_end_on_in_first_track do
     for l = selection.start_line, selection.end_line do
-      store_note(selected_pattern,selection.start_track,c,l)       
+      store_note(selected_seq,selected_pattern,selection.start_track,c,l)       
     end
   end
   
@@ -207,7 +268,7 @@ local function find_notes_in_selection()
     for t = selection.start_track + 1, selection.end_track - 1 do
       for c = 1, visible_note_columns[t] do
         for l = selection.start_line, selection.end_line do
-          store_note(selected_pattern,t,c,l)  
+          store_note(selected_seq,selected_pattern,t,c,l)  
         end      
       end    
     end
@@ -217,7 +278,7 @@ local function find_notes_in_selection()
   if selection.end_track - selection.start_track > 0 then
     for c = 1, math.min(selection.end_column, visible_note_columns[selection.end_track]) do
       for l = selection.start_line, selection.end_line do
-        store_note(selected_pattern,selection.end_track,c,l)    
+        store_note(selected_seq,selected_pattern,selection.end_track,c,l)    
       end
     end
   end
@@ -248,7 +309,7 @@ local function calculate_single_note_placement(p,t,c,l)
     
   local line_difference = l - selection.start_line
   
-  local delay_difference = notes_in_selection[p][t][c][l][5] + (line_difference*256)
+  local delay_difference = notes_in_selection[p][t][c][l].delay_value + (line_difference*256)
   
   local note_place = delay_difference / total_delay_range
     
@@ -372,7 +433,9 @@ local function get_sequence_length()
 end
 
 --FIND CORRECT INDEX---------------------------------------
-local function find_correct_index(s,p,t,c,l)
+local function find_correct_index(s,p,t,c,l, old_line)
+
+  local last_pl = {p = p, l = old_line}
   
   --find the correct sequence if our line index lies before or after the bounds of this pattern
   if l < 1 then  
@@ -404,7 +467,6 @@ local function find_correct_index(s,p,t,c,l)
   
   p = song.sequencer:pattern(s)
   
-  local column
   --if overflow is on, then push notes out to empty columns when available
   if resize_flags.overflow then
     while true do
@@ -412,14 +474,22 @@ local function find_correct_index(s,p,t,c,l)
       elseif song:pattern(p):track(t):line(l):note_column(c).is_empty then break
       else c = c + 1 end
     end
+    
+    if not columns_overflowed_into[t] then columns_overflowed_into[t] = 0 end
+    columns_overflowed_into[t] = math.max(columns_overflowed_into[t], c)
+    
     --expand the visible note columns to show the overflowed notes
     if c > visible_note_columns[t] then 
       song:track(t).visible_note_columns = c
-    end
+    else
+      --if no notes overflowed, but overflow is on, we will show what was originally visible
+      song:track(t).visible_note_columns = visible_note_columns[t]
+    end    
   else
     --if overflow isn't active, we should only show the columns that were originally visible
     song:track(t).visible_note_columns = visible_note_columns[t]
   end
+  
   
   --if condense is on, then pull notes in to empty columns when available
   if resize_flags.condense then
@@ -430,8 +500,114 @@ local function find_correct_index(s,p,t,c,l)
     end
   end
   
+  
+  
   --return the note column we need
-  return(song:pattern(p):track(t):line(l):note_column(c))
+  local column = song:pattern(p):track(t):line(l):note_column(c)
+  
+  --return the new p,t,c,l values as well
+  local new_ptcl = {p = p, t = t, c = c, l = l}
+  
+  return column, new_ptcl
+end
+
+--SET TRACK VISIBILITY------------------------------------------
+local function set_track_visibility(t)
+  
+  if not columns_overflowed_into[t] then columns_overflowed_into[t] = 0 end
+  
+  local columns_to_show = math.max(columns_overflowed_into[t], visible_note_columns[t])
+  song:track(t).visible_note_columns = columns_to_show
+
+end
+
+--SET NOTE COLUMN VALUES----------------------------------------------
+local function set_note_column_values(column,new_values,flags)
+
+  column.note_value = new_values.note_value
+  column.instrument_value = new_values.instrument_value
+  if flags.vol then column.volume_value = new_values.volume_value end
+  if flags.pan then column.panning_value = new_values.panning_value end
+  column.delay_value = new_values.delay_value
+  if flags.fx then column.effect_number_value = new_values.effect_number_value end
+  if flags.fx then column.effect_amount_value = new_values.effect_amount_value end
+
+end
+
+--RESTORE OLD NOTE----------------------------------------------
+local function restore_old_note(old_ptcl,new_ptcl,stored_note_values)
+  
+  --to tell if the old note has moved, we compare the stored ptcl to the new one
+  local do_ptcl_match
+  if old_ptcl.p == new_ptcl.p and 
+  old_ptcl.t == new_ptcl.t and 
+  old_ptcl.c == new_ptcl.c and
+  old_ptcl.l == new_ptcl.l then
+    
+    do_ptcl_match = true
+  
+  else
+    do_ptcl_match = false
+  end
+  
+  --if the note has moved..
+  if not (do_ptcl_match) then
+    
+    --access the column we will need to restore
+    local column_to_restore = song:pattern(old_ptcl.p):track(old_ptcl.t):line(old_ptcl.l):note_column(old_ptcl.c)
+    
+    --set the flags all to true in order to fully restore the old note
+    local flags = {
+      vol = true,
+      pan = true,
+      fx = true
+    }
+    
+    --set the values back to what they were
+    set_note_column_values( column_to_restore, stored_note_values, flags)
+    
+    return (true) --return true if we did move notes
+  end
+
+  return (false) -- return false if we did not move notes
+end
+
+--GET EXISTING NOTE----------------------------------------------
+local function get_existing_note(p,t,c,l,new_ptcl)
+
+  --store the location of the note
+  notes_in_selection[p][t][c][l].last_overwritten_ptcl.p = new_ptcl.p
+  notes_in_selection[p][t][c][l].last_overwritten_ptcl.t = new_ptcl.t
+  notes_in_selection[p][t][c][l].last_overwritten_ptcl.c = new_ptcl.c
+  notes_in_selection[p][t][c][l].last_overwritten_ptcl.l = new_ptcl.l
+  
+  --access the new column that we need to store
+  local column_to_store = song:pattern(new_ptcl.p):track(new_ptcl.t):line(new_ptcl.l):note_column(new_ptcl.c)
+    
+  --store empty data to replace its spot when it moves
+  notes_in_selection[p][t][c][l].last_overwritten_values = {
+    note_value = column_to_store.note_value,
+    instrument_value = column_to_store.instrument_value,
+    volume_value = column_to_store.volume_value,
+    panning_value = column_to_store.panning_value,
+    delay_value = column_to_store.delay_value,
+    effect_number_value = column_to_store.effect_number_value,
+    effect_amount_value = column_to_store.effect_amount_value
+  }
+
+end
+
+--CLEAR PREVIOUS LOCATION-------------------------------------
+local function clear_previous_location(p,t,c,l)
+    
+  local new_p = notes_in_selection[p][t][c][l].last_overwritten_ptcl.p
+  local new_t = notes_in_selection[p][t][c][l].last_overwritten_ptcl.t
+  local new_c = notes_in_selection[p][t][c][l].last_overwritten_ptcl.c
+  local new_l = notes_in_selection[p][t][c][l].last_overwritten_ptcl.l
+
+  
+  local column_to_clear = song:pattern(new_p):track(new_t):line(new_l):note_column(new_c):clear()
+
 end
 
 --PLACE NEW NOTE----------------------------------------------
@@ -456,17 +632,41 @@ local function place_new_note(p,t,c,l)
     
   local new_line = selection.start_line + new_line_difference
   
-  local column = find_correct_index(selected_seq,p,t,c,new_line)
+  clear_previous_location(p,t,c,l)
   
-  --place the note
-  column.note_value = notes_in_selection[p][t][c][l][1]
-  column.instrument_value = notes_in_selection[p][t][c][l][2]
-  if resize_flags[1] then column.volume_value = notes_in_selection[p][t][c][l][3] end
-  if resize_flags[2] then column.panning_value = notes_in_selection[p][t][c][l][4] end
-  column.delay_value = new_delay_value
-  if resize_flags[3] then column.effect_number_value = notes_in_selection[p][t][c][l][6] end
-  if resize_flags[3] then column.effect_amount_value = notes_in_selection[p][t][c][l][7] end
+  local column, new_ptcl = find_correct_index(selected_seq,p,t,c,new_line, l)
+ 
+  --put back the note that used to be in the spot we just left, if we have moved to a new spot
+  local result = restore_old_note(
+    notes_in_selection[p][t][c][l].last_overwritten_ptcl,
+    new_ptcl,
+    notes_in_selection[p][t][c][l].last_overwritten_values
+  )
   
+  --if we did move to a new spot, store the note from the new spot we have moved to
+  if result then get_existing_note(p,t,c,l,new_ptcl) end  
+  
+  local note_values = {
+    note_value = notes_in_selection[p][t][c][l].note_value,
+    instrument_value = notes_in_selection[p][t][c][l].instrument_value,
+    volume_value = notes_in_selection[p][t][c][l].volume_value,
+    panning_value = notes_in_selection[p][t][c][l].panning_value,
+    delay_value = notes_in_selection[p][t][c][l].delay_value,
+    effect_number_value = notes_in_selection[p][t][c][l].effect_number_value,
+    effect_amount_value = notes_in_selection[p][t][c][l].effect_amount_value
+  }  
+  
+  note_values.delay_value = new_delay_value
+  
+  set_note_column_values(column, note_values, resize_flags)
+    
+end
+
+--UPDATE MULTIPLIER TEXT---------------------------------
+local function update_multiplier_text()
+
+  vb.views.multiplier_text.text = ("%.2fx"):format((time * time_multiplier + 1))
+
 end
 
 --STRUM SELECTION------------------------------------------
@@ -481,6 +681,8 @@ local function strum_selection()
     return(false)
   end
   
+  columns_overflowed_into = {}
+  
   --WORK ON FIRST TRACK--
   for c = selection.start_column, column_to_end_on_in_first_track do
     for l = selection.start_line, selection.end_line do
@@ -489,6 +691,8 @@ local function strum_selection()
   end
   --show delay column for this track
   song:track(selection.start_track).delay_column_visible = true
+  --update note column visibility
+  set_track_visibility(selection.start_track)
   
   --WORK ON MIDDLE TRACKS (if there are more than two tracks)--  
   if selection.end_track - selection.start_track > 1 then
@@ -499,7 +703,9 @@ local function strum_selection()
         end      
       end 
       --show delay column for each middle track
-      song:track(t).delay_column_visible = true   
+      song:track(t).delay_column_visible = true  
+      --update note column visibility
+      set_track_visibility(t) 
     end
   end
   
@@ -512,7 +718,11 @@ local function strum_selection()
     end
     --show delay column for this track
     song:track(selection.end_track).delay_column_visible = true  
+    --update note column visibility
+    set_track_visibility(selection.end_track)
   end
+  
+  update_multiplier_text()
 
   return(true)
 end
@@ -523,7 +733,14 @@ local function show_window()
   --prepare the window content if it hasn't been done yet
   if not vb_data.window_content then    
     vb_data.window_content = vb:column {
-  
+      
+      --make this a valuefield
+      vb:text {
+        id = "multiplier_text",
+        text = "1x",
+        align = "center"
+      },
+      
       vb:minislider {    
       id = "time_slider", 
       tooltip = "The time over which to spread the notes", 
@@ -618,11 +835,13 @@ end
 local function resize_selection()
       
   local result = reset_variables()
+  if result then result = get_selection() end
   if result then result = find_notes_in_selection() end
   if result then result = calculate_range() end
   if result then result = calculate_note_placements() end
   if result then result = add_document_notifiers() end
-  if result then result = show_window() end      
+  if result then result = show_window() end
+  if result then result = activate_controls() end    
   if result then result = reset_view() end
 
 end
