@@ -432,10 +432,33 @@ local function get_sequence_length()
   return(seq_length.length)
 end
 
---FIND CORRECT INDEX---------------------------------------
-local function find_correct_index(s,p,t,c,l, old_line)
+--IS ALREADY STORED-----------------------------------------
+local function is_already_stored(new_ptcl)
+  
+  --check if any last_overwritten_ptcl match the argument
+  for p in pairs(notes_in_selection) do
+    for t in pairs(notes_in_selection[p]) do
+      for c in pairs(notes_in_selection[p][t]) do
+        for l in pairs(notes_in_selection[p][t][c]) do          
+          if new_ptcl.p == notes_in_selection[p][t][c][l].last_overwritten_ptcl.p and
+           new_ptcl.t == notes_in_selection[p][t][c][l].last_overwritten_ptcl.t and
+           new_ptcl.c == notes_in_selection[p][t][c][l].last_overwritten_ptcl.c and
+           new_ptcl.l == notes_in_selection[p][t][c][l].last_overwritten_ptcl.l then
+          
+            print("found a match!")
+            return {p = p, t = t, c = c, l = l}
+            
+          end
+        end
+      end
+    end
+  end
+  
+  return(false)
+end
 
-  local last_pl = {p = p, l = old_line}
+--FIND CORRECT INDEX---------------------------------------
+local function find_correct_index(s,p,t,c,l)
   
   --find the correct sequence if our line index lies before or after the bounds of this pattern
   if l < 1 then  
@@ -472,6 +495,7 @@ local function find_correct_index(s,p,t,c,l, old_line)
     while true do
       if c == 12 then break
       elseif song:pattern(p):track(t):line(l):note_column(c).is_empty then break
+      --elseif not not is_already_stored({p,t,c,l}) then break
       else c = c + 1 end
     end
     
@@ -536,16 +560,15 @@ end
 
 --RESTORE OLD NOTE----------------------------------------------
 local function restore_old_note(old_ptcl,new_ptcl,stored_note_values)
+  print("restore_old_note")
   
   --to tell if the old note has moved, we compare the stored ptcl to the new one
   local do_ptcl_match
   if old_ptcl.p == new_ptcl.p and 
   old_ptcl.t == new_ptcl.t and 
   old_ptcl.c == new_ptcl.c and
-  old_ptcl.l == new_ptcl.l then
-    
-    do_ptcl_match = true
-  
+  old_ptcl.l == new_ptcl.l then    
+    do_ptcl_match = true  
   else
     do_ptcl_match = false
   end
@@ -572,14 +595,57 @@ local function restore_old_note(old_ptcl,new_ptcl,stored_note_values)
   return (false) -- return false if we did not move notes
 end
 
+--COPY STORED NOTE---------------------------------------------
+local function copy_stored_note(ptcl_to_copy,ptcl_to_store)
+
+  print(("to copy p = %i, t = %i, c = %i, l = %i"):format(ptcl_to_copy.p,ptcl_to_copy.t,ptcl_to_copy.c,ptcl_to_copy.l))
+  print(("to store p = %i, t = %i, c = %i, l = %i"):format(ptcl_to_store.p,ptcl_to_store.t,ptcl_to_store.c,ptcl_to_store.l))
+  
+  notes_in_selection[ptcl_to_store.p][ptcl_to_store.t][ptcl_to_store.c][ptcl_to_store.l].last_overwritten_values = {
+  
+    note_value = notes_in_selection[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.note_value,
+    
+    instrument_value = notes_in_selection[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.instrument_value,
+    
+    volume_value = notes_in_selection[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.volume_value,
+    
+    panning_value = notes_in_selection[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.panning_value,
+    
+    delay_value = notes_in_selection[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.delay_value,
+    
+    effect_number_value = notes_in_selection[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.effect_number_value,
+    
+    effect_amount_value = notes_in_selection[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.effect_amount_value
+  
+  }
+
+end
+
 --GET EXISTING NOTE----------------------------------------------
 local function get_existing_note(p,t,c,l,new_ptcl)
+  print("get_existing_note")
 
   --store the location of the note
   notes_in_selection[p][t][c][l].last_overwritten_ptcl.p = new_ptcl.p
   notes_in_selection[p][t][c][l].last_overwritten_ptcl.t = new_ptcl.t
   notes_in_selection[p][t][c][l].last_overwritten_ptcl.c = new_ptcl.c
   notes_in_selection[p][t][c][l].last_overwritten_ptcl.l = new_ptcl.l
+  
+  --check if another note is already storing this spot, and going to restore it when it moves
+  local ptcl = is_already_stored(new_ptcl)
+  if (ptcl) then
+    
+    local our_ptcl = {
+      p = p,
+      t = t,
+      c = c,
+      l = l
+    }    
+    
+    copy_stored_note(ptcl,our_ptcl)
+    
+    return
+  end
   
   --access the new column that we need to store
   local column_to_store = song:pattern(new_ptcl.p):track(new_ptcl.t):line(new_ptcl.l):note_column(new_ptcl.c)
@@ -594,11 +660,12 @@ local function get_existing_note(p,t,c,l,new_ptcl)
     effect_number_value = column_to_store.effect_number_value,
     effect_amount_value = column_to_store.effect_amount_value
   }
-
+  
 end
 
 --CLEAR PREVIOUS LOCATION-------------------------------------
 local function clear_previous_location(p,t,c,l)
+  print("clear_previous_location")
     
   local new_p = notes_in_selection[p][t][c][l].last_overwritten_ptcl.p
   local new_t = notes_in_selection[p][t][c][l].last_overwritten_ptcl.t
@@ -634,7 +701,7 @@ local function place_new_note(p,t,c,l)
   
   clear_previous_location(p,t,c,l)
   
-  local column, new_ptcl = find_correct_index(selected_seq,p,t,c,new_line, l)
+  local column, new_ptcl = find_correct_index(selected_seq,p,t,c,new_line)
  
   --put back the note that used to be in the spot we just left, if we have moved to a new spot
   local result = restore_old_note(
@@ -671,10 +738,6 @@ end
 
 --STRUM SELECTION------------------------------------------
 local function strum_selection()
-
-  if debugvars.clear_pattern_one then
-    song:pattern(1):clear()
-  end
   
   if not valid_selection then
     app:show_error("There is no valid selection to operate on!")

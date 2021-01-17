@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <RenoiseScriptingTool doc_version="0">
   <Name>Resize</Name>
-  <Id>mom.MOMarmalade.Strum</Id>
+  <Id>mom.MOMarmalade.Resize</Id>
   <Version>0.1.1</Version>
   <ApiVersion>6.1</ApiVersion>
   <Author>MOMarmalade [xephyrpanda@yahoo.com]</Author>
