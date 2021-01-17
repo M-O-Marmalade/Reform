@@ -1,4 +1,4 @@
---Strum - main.lua--
+--Resize - main.lua--
 --DEBUG CONTROLS-------------------------------
 local debugmode = true 
 
@@ -20,7 +20,7 @@ local song = nil
 local vb = renoise.ViewBuilder() 
 local vb_data = {
   window_obj = nil,
-  window_title = "Strum",
+  window_title = "Resize",
   window_content = nil,
   default_margin = 0,
   sliders_width = 22,
