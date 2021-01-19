@@ -578,6 +578,14 @@ end
 --RESTORE OLD NOTE----------------------------------------------
 local function restore_old_note(p,t,c,l)
 
+  --check if this note was empty/nil, and if so, return from this function without doing anything
+  if not notes_in_selection[p] or
+  not notes_in_selection[p][t] or
+  not notes_in_selection[p][t][c] or
+  not notes_in_selection[p][t][c][l] then
+    return
+  end
+
   --access the ptcl values we will be indexing
   local ptcl_to_restore = {
     p = notes_in_selection[p][t][c][l].last_overwritten_ptcl.p,
