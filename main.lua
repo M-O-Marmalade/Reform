@@ -37,6 +37,7 @@ local columns_overflowed_into = {}
 local column_to_end_on_in_first_track
 local notes_in_selection = {}
 local total_delay_range
+local current_note_locations = {}
 
 local resize_flags = {
   vol = true,
@@ -203,10 +204,10 @@ local function store_note(s,p,t,c,l)
     notes_in_selection[p][t][c][l].effect_number_value = column.effect_number_value 
     notes_in_selection[p][t][c][l].effect_amount_value = column.effect_amount_value
     
-    --store the location of the note
+    --initialize the location of the note
     notes_in_selection[p][t][c][l].last_overwritten_ptcl = {p = p, t = t, c = c, l = l}
     
-    --store empty data to replace its spot when it moves
+    --initialize empty data to replace its spot when it moves
     notes_in_selection[p][t][c][l].last_overwritten_values = {
       note_value = 121,
       instrument_value = 255,
@@ -216,6 +217,9 @@ local function store_note(s,p,t,c,l)
       effect_number_value = 0,
       effect_amount_value = 0
     }
+    
+    --initalize our flag so that the note will leave an empty space behind when it moves
+    notes_in_selection[p][t][c][l].restore_flag = true
   
   end
   
@@ -432,8 +436,18 @@ local function get_sequence_length()
   return(seq_length.length)
 end
 
---IS ALREADY STORED-----------------------------------------
-local function is_already_stored(new_ptcl)
+--IS STORABLE-----------------------------------------
+local function is_storable(our_ptcl,new_ptcl)
+
+  if current_note_locations[new_ptcl.p] then
+    if current_note_locations[new_ptcl.p][new_ptcl.t] then
+      if current_note_locations[new_ptcl.p][new_ptcl.t][new_ptcl.c] then
+        if current_note_locations[new_ptcl.p][new_ptcl.t][new_ptcl.c][new_ptcl.l] then
+          return false
+        end
+      end
+    end
+  end
   
   --check if any last_overwritten_ptcl match the argument
   for p in pairs(notes_in_selection) do
@@ -443,18 +457,22 @@ local function is_already_stored(new_ptcl)
           if new_ptcl.p == notes_in_selection[p][t][c][l].last_overwritten_ptcl.p and
            new_ptcl.t == notes_in_selection[p][t][c][l].last_overwritten_ptcl.t and
            new_ptcl.c == notes_in_selection[p][t][c][l].last_overwritten_ptcl.c and
-           new_ptcl.l == notes_in_selection[p][t][c][l].last_overwritten_ptcl.l then
+           new_ptcl.l == notes_in_selection[p][t][c][l].last_overwritten_ptcl.l and
+           new_ptcl.p ~= our_ptcl.p and
+           new_ptcl.t ~= our_ptcl.t and
+           new_ptcl.c ~= our_ptcl.c and
+           new_ptcl.l ~= our_ptcl.l then
           
-            print("found a match!")
-            return {p = p, t = t, c = c, l = l}
-            
+            print(("found a match at p:%i, t:%i, c:%i, l:%i!"):format(p,t,c,l))
+            return false            
+                      
           end
         end
       end
     end
   end
   
-  return(false)
+  return true
 end
 
 --FIND CORRECT INDEX---------------------------------------
@@ -495,7 +513,6 @@ local function find_correct_index(s,p,t,c,l)
     while true do
       if c == 12 then break
       elseif song:pattern(p):track(t):line(l):note_column(c).is_empty then break
-      --elseif not not is_already_stored({p,t,c,l}) then break
       else c = c + 1 end
     end
     
@@ -559,47 +576,49 @@ local function set_note_column_values(column,new_values,flags)
 end
 
 --RESTORE OLD NOTE----------------------------------------------
-local function restore_old_note(old_ptcl,new_ptcl,stored_note_values)
-  print("restore_old_note")
-  
-  --to tell if the old note has moved, we compare the stored ptcl to the new one
-  local do_ptcl_match
-  if old_ptcl.p == new_ptcl.p and 
-  old_ptcl.t == new_ptcl.t and 
-  old_ptcl.c == new_ptcl.c and
-  old_ptcl.l == new_ptcl.l then    
-    do_ptcl_match = true  
-  else
-    do_ptcl_match = false
-  end
-  
-  --if the note has moved..
-  if not (do_ptcl_match) then
-    
-    --access the column we will need to restore
-    local column_to_restore = song:pattern(old_ptcl.p):track(old_ptcl.t):line(old_ptcl.l):note_column(old_ptcl.c)
-    
-    --set the flags all to true in order to fully restore the old note
-    local flags = {
-      vol = true,
-      pan = true,
-      fx = true
-    }
-    
-    --set the values back to what they were
-    set_note_column_values( column_to_restore, stored_note_values, flags)
-    
-    return (true) --return true if we did move notes
-  end
+local function restore_old_note(p,t,c,l)
 
-  return (false) -- return false if we did not move notes
+  --access the ptcl values we will be indexing
+  local ptcl_to_restore = {
+    p = notes_in_selection[p][t][c][l].last_overwritten_ptcl.p,
+    t = notes_in_selection[p][t][c][l].last_overwritten_ptcl.t,
+    c = notes_in_selection[p][t][c][l].last_overwritten_ptcl.c,
+    l = notes_in_selection[p][t][c][l].last_overwritten_ptcl.l
+  }
+  
+  --clear the column clean
+  song:pattern(ptcl_to_restore.p):track(ptcl_to_restore.t):line(ptcl_to_restore.l):note_column(ptcl_to_restore.c):clear()
+  
+  --exit this function here if this note is not supposed to restore anything
+  if not notes_in_selection[p][t][c][l].restore_flag then 
+    print(("not restoring note p:%i, t:%i, c:%i l:%i because it's flag is set false!"):format(p,t,c,l))
+    return 
+  end   
+    
+  print(("restoring note p:%i, t:%i, c:%i l:%i because it's flag is set true!"):format(p,t,c,l))
+    
+  --access the column we will need to restore
+  local column_to_restore = song:pattern(ptcl_to_restore.p):track(ptcl_to_restore.t):line(ptcl_to_restore.l):note_column(ptcl_to_restore.c)
+  
+  --access the values to restore
+  local stored_note_values = notes_in_selection[p][t][c][l].last_overwritten_values
+  
+  --set the flags all to true in order to fully restore the old note
+  local flags = {
+    vol = true,
+    pan = true,
+    fx = true
+  }
+  
+  --restore the note
+  set_note_column_values( column_to_restore, stored_note_values, flags)
+  
+  return true
 end
 
+--[[
 --COPY STORED NOTE---------------------------------------------
 local function copy_stored_note(ptcl_to_copy,ptcl_to_store)
-
-  print(("to copy p = %i, t = %i, c = %i, l = %i"):format(ptcl_to_copy.p,ptcl_to_copy.t,ptcl_to_copy.c,ptcl_to_copy.l))
-  print(("to store p = %i, t = %i, c = %i, l = %i"):format(ptcl_to_store.p,ptcl_to_store.t,ptcl_to_store.c,ptcl_to_store.l))
   
   notes_in_selection[ptcl_to_store.p][ptcl_to_store.t][ptcl_to_store.c][ptcl_to_store.l].last_overwritten_values = {
   
@@ -620,10 +639,10 @@ local function copy_stored_note(ptcl_to_copy,ptcl_to_store)
   }
 
 end
+--]]
 
 --GET EXISTING NOTE----------------------------------------------
 local function get_existing_note(p,t,c,l,new_ptcl)
-  print("get_existing_note")
 
   --store the location of the note
   notes_in_selection[p][t][c][l].last_overwritten_ptcl.p = new_ptcl.p
@@ -632,49 +651,84 @@ local function get_existing_note(p,t,c,l,new_ptcl)
   notes_in_selection[p][t][c][l].last_overwritten_ptcl.l = new_ptcl.l
   
   --check if another note is already storing this spot, and going to restore it when it moves
-  local ptcl = is_already_stored(new_ptcl)
-  if (ptcl) then
+  local is_storable_bool,ptcl = is_storable({p=p,t=t,c=c,l=l},new_ptcl)
+  if not is_storable_bool then
     
-    local our_ptcl = {
-      p = p,
-      t = t,
-      c = c,
-      l = l
-    }    
+    notes_in_selection[p][t][c][l].restore_flag = false
     
-    copy_stored_note(ptcl,our_ptcl)
-    
-    return
-  end
+  else
   
-  --access the new column that we need to store
-  local column_to_store = song:pattern(new_ptcl.p):track(new_ptcl.t):line(new_ptcl.l):note_column(new_ptcl.c)
+    notes_in_selection[p][t][c][l].restore_flag = true
     
-  --store empty data to replace its spot when it moves
-  notes_in_selection[p][t][c][l].last_overwritten_values = {
-    note_value = column_to_store.note_value,
-    instrument_value = column_to_store.instrument_value,
-    volume_value = column_to_store.volume_value,
-    panning_value = column_to_store.panning_value,
-    delay_value = column_to_store.delay_value,
-    effect_number_value = column_to_store.effect_number_value,
-    effect_amount_value = column_to_store.effect_amount_value
-  }
+    --access the new column that we need to store
+    local column_to_store = song:pattern(new_ptcl.p):track(new_ptcl.t):line(new_ptcl.l):note_column(new_ptcl.c)
+      
+    --store empty data to replace its spot when it moves
+    notes_in_selection[p][t][c][l].last_overwritten_values = {
+      note_value = column_to_store.note_value,
+      instrument_value = column_to_store.instrument_value,
+      volume_value = column_to_store.volume_value,
+      panning_value = column_to_store.panning_value,
+      delay_value = column_to_store.delay_value,
+      effect_number_value = column_to_store.effect_number_value,
+      effect_amount_value = column_to_store.effect_amount_value
+    }
+    
+  end
   
 end
 
 --CLEAR PREVIOUS LOCATION-------------------------------------
 local function clear_previous_location(p,t,c,l)
-  print("clear_previous_location")
+
+  --check if this note was empty/nil, and if so, return from this function without doing anything
+  if not notes_in_selection[p] or
+  not notes_in_selection[p][t] or
+  not notes_in_selection[p][t][c] or
+  not notes_in_selection[p][t][c][l] then
+    return
+  end
     
   local new_p = notes_in_selection[p][t][c][l].last_overwritten_ptcl.p
   local new_t = notes_in_selection[p][t][c][l].last_overwritten_ptcl.t
   local new_c = notes_in_selection[p][t][c][l].last_overwritten_ptcl.c
   local new_l = notes_in_selection[p][t][c][l].last_overwritten_ptcl.l
-
   
-  local column_to_clear = song:pattern(new_p):track(new_t):line(new_l):note_column(new_c):clear()
+  song:pattern(new_p):track(new_t):line(new_l):note_column(new_c):clear()
 
+end
+
+--UPDATE CURRENT NOTE LOCATION----------------------------------------
+local function update_current_note_location(note_ptcl,ptcl)
+
+  if not current_note_locations[ptcl.p] then
+    current_note_locations[ptcl.p] = {}
+  end
+  
+  if not current_note_locations[ptcl.p][ptcl.t] then
+    current_note_locations[ptcl.p][ptcl.t] = {}
+  end 
+  
+  if not current_note_locations[ptcl.p][ptcl.t][ptcl.c] then
+    current_note_locations[ptcl.p][ptcl.t][ptcl.c] = {}
+  end
+  
+  current_note_locations[ptcl.p][ptcl.t][ptcl.c][ptcl.l] = true
+  
+  --print(("current_note_locations[%i][%i][%i][%i] set to true!"):format(ptcl.p,ptcl.t,ptcl.c,ptcl.l))
+  
+  local p, t, c, l = note_ptcl.p, note_ptcl.t, note_ptcl.c, note_ptcl.l
+  local old_ptcl = {
+    p = notes_in_selection[p][t][c][l].last_overwritten_ptcl.p,
+    t = notes_in_selection[p][t][c][l].last_overwritten_ptcl.t,
+    c = notes_in_selection[p][t][c][l].last_overwritten_ptcl.c,
+    l = notes_in_selection[p][t][c][l].last_overwritten_ptcl.l
+  }
+  
+  current_note_locations[old_ptcl.p][old_ptcl.t][old_ptcl.c][old_ptcl.l] = false
+  
+  --print(("current_note_locations[%i][%i][%i][%i] set to false!"):format(old_ptcl.p,old_ptcl.t,old_ptcl.c,old_ptcl.l))
+  
 end
 
 --PLACE NEW NOTE----------------------------------------------
@@ -699,19 +753,14 @@ local function place_new_note(p,t,c,l)
     
   local new_line = selection.start_line + new_line_difference
   
-  clear_previous_location(p,t,c,l)
+  --clear_previous_location(p,t,c,l)
   
-  local column, new_ptcl = find_correct_index(selected_seq,p,t,c,new_line)
- 
-  --put back the note that used to be in the spot we just left, if we have moved to a new spot
-  local result = restore_old_note(
-    notes_in_selection[p][t][c][l].last_overwritten_ptcl,
-    new_ptcl,
-    notes_in_selection[p][t][c][l].last_overwritten_values
-  )
+  local column, new_ptcl = find_correct_index(selected_seq,p,t,c,new_line)  
   
-  --if we did move to a new spot, store the note from the new spot we have moved to
-  if result then get_existing_note(p,t,c,l,new_ptcl) end  
+  update_current_note_location({p = p, t = t, c = c, l = l}, new_ptcl)
+  
+  --store the note from the new spot we have moved to
+  get_existing_note(p,t,c,l,new_ptcl) 
   
   local note_values = {
     note_value = notes_in_selection[p][t][c][l].note_value,
@@ -726,6 +775,8 @@ local function place_new_note(p,t,c,l)
   note_values.delay_value = new_delay_value
   
   set_note_column_values(column, note_values, resize_flags)
+  
+
     
 end
 
@@ -736,6 +787,38 @@ local function update_multiplier_text()
 
 end
 
+--RESTORE ALL RESIZED NOTES-----------------------------------
+local function restore_all_resized_notes()
+
+  --WORK ON FIRST TRACK--
+  for c = selection.start_column, column_to_end_on_in_first_track do
+    for l = selection.start_line, selection.end_line do
+      restore_old_note(selected_pattern,selection.start_track,c,l)
+    end
+  end
+  
+  --WORK ON MIDDLE TRACKS (if there are more than two tracks)--  
+  if selection.end_track - selection.start_track > 1 then
+    for t = selection.start_track + 1, selection.end_track - 1 do
+      for c = 1, visible_note_columns[t] do
+        for l = selection.start_line, selection.end_line do
+          restore_old_note(selected_pattern,t,c,l)     
+        end      
+      end
+    end
+  end
+  
+  --WORK ON LAST TRACK (if there is more than one track)--
+  if selection.end_track - selection.start_track > 0 then
+    for c = 1, math.min(selection.end_column, visible_note_columns[selection.end_track]) do
+      for l = selection.start_line, selection.end_line do
+        restore_old_note(selected_pattern,selection.end_track,c,l)   
+      end
+    end
+  end
+  
+end
+
 --STRUM SELECTION------------------------------------------
 local function strum_selection()
   
@@ -743,6 +826,9 @@ local function strum_selection()
     app:show_error("There is no valid selection to operate on!")
     return(false)
   end
+  
+  --restore everything to how it was, so we don't run into our own notes during calculations
+  restore_all_resized_notes()
   
   columns_overflowed_into = {}
   
