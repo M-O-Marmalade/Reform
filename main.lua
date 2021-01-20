@@ -94,9 +94,6 @@ local function deactivate_controls()
 
   vb.views.time_slider.active = false
   vb.views.time_multiplier_rotary.active = false
-  vb.views.vol_flag_checkbox.active = false
-  vb.views.pan_flag_checkbox.active = false
-  vb.views.fx_flag_checkbox.active = false
   vb.views.overflow_flag_checkbox.active = false
   vb.views.condense_flag_checkbox.active = false
   vb.views.redistribute_flag_checkbox.active = false
@@ -109,9 +106,6 @@ local function activate_controls()
 
   vb.views.time_slider.active = true
   vb.views.time_multiplier_rotary.active = true
-  vb.views.vol_flag_checkbox.active = true
-  vb.views.pan_flag_checkbox.active = true
-  vb.views.fx_flag_checkbox.active = true
   vb.views.overflow_flag_checkbox.active = true
   vb.views.condense_flag_checkbox.active = true
   vb.views.redistribute_flag_checkbox.active = true
@@ -446,6 +440,7 @@ end
 --FIND CORRECT INDEX---------------------------------------
 local function find_correct_index(original_index, new_line)
   
+  --shorten variables
   local s,p,t,c,l = original_index.s, original_index.p, original_index.t, original_index.c, new_line
   
   --find the correct sequence if our line index lies before or after the bounds of this pattern
@@ -476,6 +471,7 @@ local function find_correct_index(original_index, new_line)
     end      
   end
   
+  --get the new pattern index based on our new sequence index
   p = song.sequencer:pattern(s)
   
   --if overflow is on, then push notes out to empty columns when available
@@ -486,19 +482,9 @@ local function find_correct_index(original_index, new_line)
       else c = c + 1 end
     end
     
+    --record which columns we overflowed into (set to 0 if we didn't overflow at all)
     if not columns_overflowed_into[t] then columns_overflowed_into[t] = 0 end
-    columns_overflowed_into[t] = math.max(columns_overflowed_into[t], c)
-    
-    --expand the visible note columns to show the overflowed notes
-    if c > originally_visible_note_columns[t] then 
-      song:track(t).visible_note_columns = c
-    else
-      --if no notes overflowed, but overflow is on, we will show what was originally visible
-      song:track(t).visible_note_columns = originally_visible_note_columns[t]
-    end    
-  else
-    --if overflow isn't active, we should only show the columns that were originally visible
-    song:track(t).visible_note_columns = originally_visible_note_columns[t]
+    columns_overflowed_into[t] = math.max(columns_overflowed_into[t], c)        
   end
   
   
@@ -557,8 +543,10 @@ local function restore_old_note(counter)
     l = selected_notes[counter].current_location.l
   }
   
+  --[[
   --clear the column clean
   song:pattern(restore_index.p):track(restore_index.t):line(restore_index.l):note_column(restore_index.c):clear()
+  --]]
   
   --exit this function here if this note is not supposed to restore anything
   if not selected_notes[counter].restore_flag then 
@@ -673,8 +661,8 @@ local function update_multiplier_text()
 
 end
 
---STRUM SELECTION------------------------------------------
-local function strum_selection()
+--APPLY RESIZE------------------------------------------
+local function apply_resize()
   
   if not valid_selection then
     app:show_error("There is no valid selection to operate on!")
@@ -745,7 +733,7 @@ local function show_window()
       height = vb_data.sliders_height, 
       notifier = function(value)
         time = -value
-        strum_selection()
+        apply_resize()
       end    
       },
       
@@ -759,7 +747,7 @@ local function show_window()
         height = vb_data.multipliers_size, 
         notifier = function(value) 
           time_multiplier = value
-          strum_selection()
+          apply_resize()
         end 
       },              
       
@@ -769,7 +757,7 @@ local function show_window()
         value = resize_flags.overflow, 
         notifier = function(value) 
           resize_flags.overflow = value
-          strum_selection()
+          apply_resize()
         end 
       },
       
@@ -779,7 +767,7 @@ local function show_window()
         value = resize_flags.condense, 
         notifier = function(value) 
           resize_flags.condense = value
-          strum_selection()
+          apply_resize()
         end 
       },
       
@@ -789,7 +777,7 @@ local function show_window()
         value = resize_flags.redistribute, 
         notifier = function(value) 
           resize_flags.redistribute = value
-          strum_selection()
+          apply_resize()
         end 
       }   
              
