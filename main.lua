@@ -8,8 +8,9 @@ end
 
 local debugvars = {
   clear_pattern_one = false,
-  print_notifier_attachments = true,
-  print_notifier_triggers = true
+  print_notifier_attachments = false,
+  print_notifier_triggers = false,
+  print_restorations = false
 }
 
 --GLOBALS-------------------------------------------------------------------------------------------- 
@@ -37,14 +38,11 @@ local columns_overflowed_into = {}
 local column_to_end_on_in_first_track
 local selected_notes = {}
 local total_delay_range
-local current_note_locations = {}
 
 local resize_flags = {
-  vol = true,
-  pan = true,
-  fx = true,
   overflow = true,
-  condense = false
+  condense = false,
+  redistribute = false
 }
 
 local pattern_lengths = {} --an array of []{length, valid, notifier}
@@ -71,12 +69,10 @@ local function reset_variables()
   time = 0
   time_multiplier = 1
   
-  resize_flags = {
-    vol = true,
-    pan = true,
-    fx = true,
+  resize_flags = {   
     overflow = true,
-    condense = false
+    condense = false,
+    redistribute = false
   }
   
   return(true)
@@ -87,9 +83,6 @@ local function reset_view()
 
   vb.views.time_slider.value = time
   vb.views.time_multiplier_rotary.value = time_multiplier
-  vb.views.vol_flag_checkbox.value = resize_flags.vol
-  vb.views.pan_flag_checkbox.value = resize_flags.pan
-  vb.views.fx_flag_checkbox.value = resize_flags.fx
   vb.views.overflow_flag_checkbox.value = resize_flags.overflow
   vb.views.condense_flag_checkbox.value = resize_flags.condense
 
@@ -106,6 +99,7 @@ local function deactivate_controls()
   vb.views.fx_flag_checkbox.active = false
   vb.views.overflow_flag_checkbox.active = false
   vb.views.condense_flag_checkbox.active = false
+  vb.views.redistribute_flag_checkbox.active = false
 
   return(true)
 end
@@ -120,6 +114,7 @@ local function activate_controls()
   vb.views.fx_flag_checkbox.active = true
   vb.views.overflow_flag_checkbox.active = true
   vb.views.condense_flag_checkbox.active = true
+  vb.views.redistribute_flag_checkbox.active = true
 
   return(true)
 end
@@ -160,7 +155,7 @@ local function new_document()
   song = renoise.song()
   
   reset_variables()
-  reset_view()
+  --reset_view()
   
 end
 
@@ -322,23 +317,10 @@ local function calculate_range()
   return(true)
 end
 
---CALCULATE SINGLE NOTE PLACEMENT------------------------------------------
-local function calculate_single_note_placement(counter)
-    
-  local line_difference = l - selection.start_line
-  
-  local delay_difference = selected_notes[counter].delay_value + (line_difference*256)
-  
-  local note_place = delay_difference / total_delay_range
-    
-  selected_notes[counter].placement = note_place
-    
-  return(true)
-end
-
 --CALCULATE NOTE PLACEMENTS------------------------------------------
 local function calculate_note_placements()
-
+  
+  --calculate original placements
   for k in ipairs(selected_notes) do
     
     local line_difference = selected_notes[k].original_index.l - selection.start_line
@@ -349,8 +331,14 @@ local function calculate_note_placements()
     
     selected_notes[k].placement = note_place
   
-  end  
-
+  end    
+  
+  --calculate redistributed placements
+  local amount_of_notes = #selected_notes
+  for k in ipairs(selected_notes) do
+    selected_notes[k].redistributed_placement = (k - 1) / amount_of_notes
+  end
+  
   return(true)
 end
 
@@ -546,7 +534,7 @@ local function set_track_visibility(t)
 end
 
 --SET NOTE COLUMN VALUES----------------------------------------------
-local function set_note_column_values(column,new_values,flags)
+local function set_note_column_values(column,new_values)
 
   column.note_value = new_values.note_value
   column.instrument_value = new_values.instrument_value
@@ -574,11 +562,15 @@ local function restore_old_note(counter)
   
   --exit this function here if this note is not supposed to restore anything
   if not selected_notes[counter].restore_flag then 
-    --print(("not restoring note %i because it's flag is set false!"):format(counter))
+    if debugvars.print_restorations then
+      print(("not restoring note %i because it's flag is set false!"):format(counter))
+    end
     return 
   end   
     
-  --print(("restoring note %i because it's flag is set true!"):format(counter))
+  if debugvars.print_restorations then
+    print(("restoring note %i because it's flag is set true!"):format(counter))
+  end
     
   --access the column we will need to restore
   local column_to_restore = song:pattern(restore_index.p):track(restore_index.t):line(restore_index.l):note_column(restore_index.c)
@@ -586,43 +578,11 @@ local function restore_old_note(counter)
   --access the values to restore
   local stored_note_values = selected_notes[counter].last_overwritten_values
   
-  --set the flags all to true in order to fully restore the old note
-  local flags = {
-    vol = true,
-    pan = true,
-    fx = true
-  }
-  
   --restore the note
-  set_note_column_values( column_to_restore, stored_note_values, flags)
+  set_note_column_values( column_to_restore, stored_note_values)
   
   return true
 end
-
---[[
---COPY STORED NOTE---------------------------------------------
-local function copy_stored_note(ptcl_to_copy,ptcl_to_store)
-  
-  selected_notes[ptcl_to_store.p][ptcl_to_store.t][ptcl_to_store.c][ptcl_to_store.l].last_overwritten_values = {
-  
-    note_value = selected_notes[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.note_value,
-    
-    instrument_value = selected_notes[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.instrument_value,
-    
-    volume_value = selected_notes[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.volume_value,
-    
-    panning_value = selected_notes[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.panning_value,
-    
-    delay_value = selected_notes[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.delay_value,
-    
-    effect_number_value = selected_notes[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.effect_number_value,
-    
-    effect_amount_value = selected_notes[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.effect_amount_value
-  
-  }
-
-end
---]]
 
 --GET EXISTING NOTE----------------------------------------------
 local function get_existing_note(index,counter)
@@ -631,12 +591,9 @@ local function get_existing_note(index,counter)
     
     selected_notes[counter].restore_flag = false  --set this note's flag to false
     
-    if index.l == 7 and index.c == 2 then print(("line:%i is NOT storable by note %i"):format(index.l,counter)) end
-    
   else  --otherwise, if it is a "wild" note, or an empty spot, then
   
     selected_notes[counter].restore_flag = true
-    if index.l == 7 and index.c == 2 then print(("line:%i IS storable by note %i"):format(index.l,counter)) end
     
     --access the new column that we need to store
     local column_to_store = song:pattern(index.p):track(index.t):line(index.l):note_column(index.c)
@@ -656,26 +613,6 @@ local function get_existing_note(index,counter)
   
 end
 
---CLEAR PREVIOUS LOCATION-------------------------------------
-local function clear_previous_location(p,t,c,l)
-
-  --check if this note was empty/nil, and if so, return from this function without doing anything
-  if not selected_notes[p] or
-  not selected_notes[p][t] or
-  not selected_notes[p][t][c] or
-  not selected_notes[counter] then
-    return
-  end
-    
-  local new_p = selected_notes[counter].last_location.p
-  local new_t = selected_notes[counter].last_location.t
-  local new_c = selected_notes[counter].last_location.c
-  local new_l = selected_notes[counter].last_location.l
-  
-  song:pattern(new_p):track(new_t):line(new_l):note_column(new_c):clear()
-
-end
-
 --UPDATE CURRENT NOTE LOCATION----------------------------------------
 local function update_current_note_location(counter,new_index)
   
@@ -687,33 +624,21 @@ local function update_current_note_location(counter,new_index)
   
 end
 
---UPDATE MULTIPLIER TEXT---------------------------------
-local function update_multiplier_text()
-
-  vb.views.multiplier_text.text = ("%.2fx"):format((time * time_multiplier + 1))
-
-end
-
---RESTORE ALL RESIZED NOTES-----------------------------------
-local function restore_all_resized_notes()
-
-  for k in ipairs(selected_notes) do
-    restore_old_note(k)
-  end
-  
-end
-
 --PLACE NEW NOTE----------------------------------------------
 local function place_new_note(counter)
   
   --calculate the indexes where the new note will be, based on its placement value
-  local new_placement = selected_notes[counter].placement * (time * time_multiplier + 1)    
+  local placement_to_use
+  if resize_flags.redistribute then 
+    placement_to_use = selected_notes[counter].redistributed_placement
+  else
+    placement_to_use = selected_notes[counter].placement
+  end
+  local new_placement = placement_to_use * (time * time_multiplier + 1)    
   local new_delay_difference = new_placement*total_delay_range   
   local new_line_difference = math.floor(new_delay_difference / 256)    
   local new_delay_value = new_delay_difference%256    
   local new_line = selection.start_line + new_line_difference
-  
-  --clear_previous_location(p,t,c,l)
   
   local column, new_index = find_correct_index(selected_notes[counter].original_index, new_line)  
   
@@ -734,11 +659,18 @@ local function place_new_note(counter)
   
   note_values.delay_value = new_delay_value
   
-  set_note_column_values(column, note_values, resize_flags)
+  set_note_column_values(column, note_values)
   
   --set note's "is_placed" flag to true
   selected_notes[counter].is_placed = true
   
+end
+
+--UPDATE MULTIPLIER TEXT---------------------------------
+local function update_multiplier_text()
+
+  vb.views.multiplier_text.text = ("%.4fx"):format((time * time_multiplier + 1))
+
 end
 
 --STRUM SELECTION------------------------------------------
@@ -752,9 +684,11 @@ local function strum_selection()
   columns_overflowed_into = {}
   
   --restore everything to how it was, so we don't run into our own notes during calculations
-  restore_all_resized_notes()
+  for k in ipairs(selected_notes) do
+    restore_old_note(k)
+  end
   
-  --clear all note locations so we can lay them down cleanly
+  --clear all notes' "is_placed" flags so we can lay them down one by one cleanly
   for k in ipairs(selected_notes) do
     selected_notes[k].is_placed = false
   end
@@ -797,7 +731,7 @@ local function show_window()
       --make this a valuefield
       vb:text {
         id = "multiplier_text",
-        text = "1x",
+        text = "1.0000x",
         align = "center"
       },
       
@@ -827,42 +761,12 @@ local function show_window()
           time_multiplier = value
           strum_selection()
         end 
-      },
-        
-      vb:checkbox { 
-        id = "vol_flag_checkbox", 
-        tooltip = "Volume Flag",
-        value = true, 
-        notifier = function(value) 
-          resize_flags[1] = value
-          strum_selection()
-        end 
-      },
-      
-      vb:checkbox { 
-        id = "pan_flag_checkbox", 
-        tooltip = "Panning Flag",
-        value = true, 
-        notifier = function(value) 
-          resize_flags[2] = value
-          strum_selection()
-        end 
-      },
-      
-      vb:checkbox { 
-        id = "fx_flag_checkbox", 
-        tooltip = "FX Flag",
-        value = true, 
-        notifier = function(value) 
-          resize_flags[3] = value
-          strum_selection()
-        end 
-      },
+      },              
       
       vb:checkbox { 
         id = "overflow_flag_checkbox", 
         tooltip = "Overflow Flag",
-        value = true, 
+        value = resize_flags.overflow, 
         notifier = function(value) 
           resize_flags.overflow = value
           strum_selection()
@@ -872,9 +776,19 @@ local function show_window()
       vb:checkbox { 
         id = "condense_flag_checkbox", 
         tooltip = "Condense Flag",
-        value = true, 
+        value = resize_flags.condense, 
         notifier = function(value) 
           resize_flags.condense = value
+          strum_selection()
+        end 
+      },
+      
+      vb:checkbox { 
+        id = "redistribute_flag_checkbox", 
+        tooltip = "Redistribute Flag",
+        value = resize_flags.redistribute, 
+        notifier = function(value) 
+          resize_flags.redistribute = value
           strum_selection()
         end 
       }   
