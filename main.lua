@@ -32,10 +32,10 @@ local selection
 local valid_selection
 local selected_seq
 local selected_pattern
-local visible_note_columns = {}
+local originally_visible_note_columns = {}
 local columns_overflowed_into = {}
 local column_to_end_on_in_first_track
-local notes_in_selection = {}
+local selected_notes = {}
 local total_delay_range
 local current_note_locations = {}
 
@@ -63,10 +63,10 @@ local time_multiplier_max = 64
 local function reset_variables()
   
   if not song then song = renoise.song() end
-  visible_note_columns = {} 
+  originally_visible_note_columns = {} 
   columns_overflowed_into = {} 
   
-  notes_in_selection = {}
+  selected_notes = {}
   
   time = 0
   time_multiplier = 1
@@ -110,7 +110,7 @@ local function deactivate_controls()
   return(true)
 end
 
---DEACTIVATE CONTROLS-------------------------------------
+--ACTIVATE CONTROLS-------------------------------------
 local function activate_controls()
 
   vb.views.time_slider.active = true
@@ -185,30 +185,50 @@ local function add_document_notifiers()
 end
 
 --STORE NOTE--------------------------------------------
-local function store_note(s,p,t,c,l)
+local function store_note(s,p,t,c,l,counter)
   
-  local column = song:pattern(p):track(t):line(l):note_column(c)
+  local column_to_store = song:pattern(p):track(t):line(l):note_column(c)
   
-  if not column.is_empty then
+  if not column_to_store.is_empty then
   
-    if not notes_in_selection[p] then notes_in_selection[p] = {} end
-    if not notes_in_selection[p][t] then notes_in_selection[p][t] = {} end
-    if not notes_in_selection[p][t][c] then notes_in_selection[p][t][c] = {} end
-    if not notes_in_selection[p][t][c][l] then notes_in_selection[p][t][c][l] = {} end
-  
-    notes_in_selection[p][t][c][l].note_value = column.note_value
-    notes_in_selection[p][t][c][l].instrument_value = column.instrument_value
-    notes_in_selection[p][t][c][l].volume_value = column.volume_value 
-    notes_in_selection[p][t][c][l].panning_value = column.panning_value 
-    notes_in_selection[p][t][c][l].delay_value = column.delay_value 
-    notes_in_selection[p][t][c][l].effect_number_value = column.effect_number_value 
-    notes_in_selection[p][t][c][l].effect_amount_value = column.effect_amount_value
+    selected_notes[counter] = {}
+    
+    selected_notes[counter].original_index = {
+      s = s,
+      p = p,
+      t = t,
+      c = c,
+      l = l
+    }
+    
+    selected_notes[counter].note_value = column_to_store.note_value
+    selected_notes[counter].instrument_value = column_to_store.instrument_value
+    selected_notes[counter].volume_value = column_to_store.volume_value 
+    selected_notes[counter].panning_value = column_to_store.panning_value 
+    selected_notes[counter].delay_value = column_to_store.delay_value 
+    selected_notes[counter].effect_number_value = column_to_store.effect_number_value 
+    selected_notes[counter].effect_amount_value = column_to_store.effect_amount_value
     
     --initialize the location of the note
-    notes_in_selection[p][t][c][l].last_overwritten_ptcl = {p = p, t = t, c = c, l = l}
+    selected_notes[counter].current_location = {
+      s = s, 
+      p = p, 
+      t = t, 
+      c = c, 
+      l = l
+    }
+    
+    --initialize the last location of the note
+    selected_notes[counter].last_location = {
+      s = s, 
+      p = p, 
+      t = t, 
+      c = c, 
+      l = l
+    }
     
     --initialize empty data to replace its spot when it moves
-    notes_in_selection[p][t][c][l].last_overwritten_values = {
+    selected_notes[counter].last_overwritten_values = {
       note_value = 121,
       instrument_value = 255,
       volume_value = 255,
@@ -219,11 +239,13 @@ local function store_note(s,p,t,c,l)
     }
     
     --initalize our flag so that the note will leave an empty space behind when it moves
-    notes_in_selection[p][t][c][l].restore_flag = true
+    selected_notes[counter].restore_flag = true
+    
+    counter = counter + 1
   
   end
   
-  return(true)
+  return(counter)
 end
 
 --GET SELECTION-----------------------------------------
@@ -246,33 +268,35 @@ local function get_selection()
 end
 
 --FIND NOTES IN SELECTION---------------------------------------------
-local function find_notes_in_selection()
+local function find_selected_notes()
   
   --determine which note columns are visible
   for t = selection.start_track, selection.end_track do  
-    visible_note_columns[t] = song:track(t).visible_note_columns     
+    originally_visible_note_columns[t] = song:track(t).visible_note_columns     
   end
     
   --find out what column to end on when working in the first track, based on how many tracks are selected total
   if selection.end_track - selection.start_track == 0 then
-    column_to_end_on_in_first_track = math.min(selection.end_column, visible_note_columns[selection.start_track])
+    column_to_end_on_in_first_track = math.min(selection.end_column, originally_visible_note_columns[selection.start_track])
   else
-    column_to_end_on_in_first_track = visible_note_columns[selection.start_track]
+    column_to_end_on_in_first_track = originally_visible_note_columns[selection.start_track]
   end
   
+  local counter = 1
+  
   --work on first track--
-  for c = selection.start_column, column_to_end_on_in_first_track do
-    for l = selection.start_line, selection.end_line do
-      store_note(selected_seq,selected_pattern,selection.start_track,c,l)       
+  for l = selection.start_line, selection.end_line do
+    for c = selection.start_column, column_to_end_on_in_first_track do
+      counter = store_note(selected_seq,selected_pattern,selection.start_track,c,l,counter)       
     end
   end
   
   --work on middle tracks--
   if selection.end_track - selection.start_track > 1 then
     for t = selection.start_track + 1, selection.end_track - 1 do
-      for c = 1, visible_note_columns[t] do
-        for l = selection.start_line, selection.end_line do
-          store_note(selected_seq,selected_pattern,t,c,l)  
+      for l = selection.start_line, selection.end_line do      
+        for c = 1, originally_visible_note_columns[t] do        
+          counter = store_note(selected_seq,selected_pattern,t,c,l)  
         end      
       end    
     end
@@ -280,15 +304,13 @@ local function find_notes_in_selection()
   
   --work on last track--
   if selection.end_track - selection.start_track > 0 then
-    for c = 1, math.min(selection.end_column, visible_note_columns[selection.end_track]) do
-      for l = selection.start_line, selection.end_line do
-        store_note(selected_seq,selected_pattern,selection.end_track,c,l)    
+    for l = selection.start_line, selection.end_line do
+      for c = 1, math.min(selection.end_column, originally_visible_note_columns[selection.end_track]) do
+        counter = store_note(selected_seq,selected_pattern,selection.end_track,c,l)    
       end
     end
   end
-  
-  
-  
+    
   return(true)
 end
 
@@ -301,23 +323,15 @@ local function calculate_range()
 end
 
 --CALCULATE SINGLE NOTE PLACEMENT------------------------------------------
-local function calculate_single_note_placement(p,t,c,l)
-
-  --check if this note was empty/nil, and if so, return from this function without doing anything
-  if not notes_in_selection[p] or
-  not notes_in_selection[p][t] or
-  not notes_in_selection[p][t][c] or
-  not notes_in_selection[p][t][c][l] then
-    return
-  end
+local function calculate_single_note_placement(counter)
     
   local line_difference = l - selection.start_line
   
-  local delay_difference = notes_in_selection[p][t][c][l].delay_value + (line_difference*256)
+  local delay_difference = selected_notes[counter].delay_value + (line_difference*256)
   
   local note_place = delay_difference / total_delay_range
     
-  notes_in_selection[p][t][c][l][8] = note_place
+  selected_notes[counter].placement = note_place
     
   return(true)
 end
@@ -325,32 +339,17 @@ end
 --CALCULATE NOTE PLACEMENTS------------------------------------------
 local function calculate_note_placements()
 
-  --work on first track--
-  for c = selection.start_column, column_to_end_on_in_first_track do
-    for l = selection.start_line, selection.end_line do
-      calculate_single_note_placement(selected_pattern,selection.start_track,c,l)
-    end
-  end
+  for k in ipairs(selected_notes) do
+    
+    local line_difference = selected_notes[k].original_index.l - selection.start_line
   
-  --work on middle tracks--
-  if selection.end_track - selection.start_track > 1 then
-    for t = selection.start_track + 1, selection.end_track - 1 do
-      for c = 1, visible_note_columns[t] do
-        for l = selection.start_line, selection.end_line do
-          calculate_single_note_placement(selected_pattern,t,c,l)     
-        end      
-      end    
-    end
-  end
+    local delay_difference = selected_notes[k].delay_value + (line_difference*256)
   
-  --work on last track--
-  if selection.end_track - selection.start_track > 0 then
-    for c = 1, math.min(selection.end_column, visible_note_columns[selection.end_track]) do
-      for l = selection.start_line, selection.end_line do
-        calculate_single_note_placement(selected_pattern,selection.end_track,c,l)   
-      end
-    end
-  end
+    local note_place = delay_difference / total_delay_range
+    
+    selected_notes[k].placement = note_place
+  
+  end  
 
   return(true)
 end
@@ -437,46 +436,29 @@ local function get_sequence_length()
 end
 
 --IS STORABLE-----------------------------------------
-local function is_storable(our_ptcl,new_ptcl)
+local function is_storable(index,counter)
 
-  if current_note_locations[new_ptcl.p] then
-    if current_note_locations[new_ptcl.p][new_ptcl.t] then
-      if current_note_locations[new_ptcl.p][new_ptcl.t][new_ptcl.c] then
-        if current_note_locations[new_ptcl.p][new_ptcl.t][new_ptcl.c][new_ptcl.l] then
-          return false
+  for k in pairs(selected_notes) do
+    if (selected_notes[k].current_location.p == index.p and
+    selected_notes[k].current_location.t == index.t and
+    selected_notes[k].current_location.c == index.c and
+    selected_notes[k].current_location.l == index.l) then
+      if k ~= counter then
+        if selected_notes[k].is_placed then     
+          return false  --return false if we found a note matching this spot
         end
       end
-    end
+    end    
   end
   
-  --check if any last_overwritten_ptcl match the argument
-  for p in pairs(notes_in_selection) do
-    for t in pairs(notes_in_selection[p]) do
-      for c in pairs(notes_in_selection[p][t]) do
-        for l in pairs(notes_in_selection[p][t][c]) do          
-          if new_ptcl.p == notes_in_selection[p][t][c][l].last_overwritten_ptcl.p and
-           new_ptcl.t == notes_in_selection[p][t][c][l].last_overwritten_ptcl.t and
-           new_ptcl.c == notes_in_selection[p][t][c][l].last_overwritten_ptcl.c and
-           new_ptcl.l == notes_in_selection[p][t][c][l].last_overwritten_ptcl.l and
-           new_ptcl.p ~= our_ptcl.p and
-           new_ptcl.t ~= our_ptcl.t and
-           new_ptcl.c ~= our_ptcl.c and
-           new_ptcl.l ~= our_ptcl.l then
-          
-            print(("found a match at p:%i, t:%i, c:%i, l:%i!"):format(p,t,c,l))
-            return false            
-                      
-          end
-        end
-      end
-    end
-  end
-  
+  --return true if no notes were found to be storing data at this spot
   return true
 end
 
 --FIND CORRECT INDEX---------------------------------------
-local function find_correct_index(s,p,t,c,l)
+local function find_correct_index(original_index, new_line)
+  
+  local s,p,t,c,l = original_index.s, original_index.p, original_index.t, original_index.c, new_line
   
   --find the correct sequence if our line index lies before or after the bounds of this pattern
   if l < 1 then  
@@ -520,15 +502,15 @@ local function find_correct_index(s,p,t,c,l)
     columns_overflowed_into[t] = math.max(columns_overflowed_into[t], c)
     
     --expand the visible note columns to show the overflowed notes
-    if c > visible_note_columns[t] then 
+    if c > originally_visible_note_columns[t] then 
       song:track(t).visible_note_columns = c
     else
       --if no notes overflowed, but overflow is on, we will show what was originally visible
-      song:track(t).visible_note_columns = visible_note_columns[t]
+      song:track(t).visible_note_columns = originally_visible_note_columns[t]
     end    
   else
     --if overflow isn't active, we should only show the columns that were originally visible
-    song:track(t).visible_note_columns = visible_note_columns[t]
+    song:track(t).visible_note_columns = originally_visible_note_columns[t]
   end
   
   
@@ -547,9 +529,9 @@ local function find_correct_index(s,p,t,c,l)
   local column = song:pattern(p):track(t):line(l):note_column(c)
   
   --return the new p,t,c,l values as well
-  local new_ptcl = {p = p, t = t, c = c, l = l}
+  local new_index = {s = s, p = p, t = t, c = c, l = l}
   
-  return column, new_ptcl
+  return column, new_index
 end
 
 --SET TRACK VISIBILITY------------------------------------------
@@ -557,7 +539,8 @@ local function set_track_visibility(t)
   
   if not columns_overflowed_into[t] then columns_overflowed_into[t] = 0 end
   
-  local columns_to_show = math.max(columns_overflowed_into[t], visible_note_columns[t])
+  local columns_to_show = math.max(columns_overflowed_into[t], originally_visible_note_columns[t])
+  
   song:track(t).visible_note_columns = columns_to_show
 
 end
@@ -567,49 +550,41 @@ local function set_note_column_values(column,new_values,flags)
 
   column.note_value = new_values.note_value
   column.instrument_value = new_values.instrument_value
-  if flags.vol then column.volume_value = new_values.volume_value end
-  if flags.pan then column.panning_value = new_values.panning_value end
+  column.volume_value = new_values.volume_value
+  column.panning_value = new_values.panning_value
   column.delay_value = new_values.delay_value
-  if flags.fx then column.effect_number_value = new_values.effect_number_value end
-  if flags.fx then column.effect_amount_value = new_values.effect_amount_value end
+  column.effect_number_value = new_values.effect_number_value
+  column.effect_amount_value = new_values.effect_amount_value
 
 end
 
 --RESTORE OLD NOTE----------------------------------------------
-local function restore_old_note(p,t,c,l)
-
-  --check if this note was empty/nil, and if so, return from this function without doing anything
-  if not notes_in_selection[p] or
-  not notes_in_selection[p][t] or
-  not notes_in_selection[p][t][c] or
-  not notes_in_selection[p][t][c][l] then
-    return
-  end
+local function restore_old_note(counter)
 
   --access the ptcl values we will be indexing
-  local ptcl_to_restore = {
-    p = notes_in_selection[p][t][c][l].last_overwritten_ptcl.p,
-    t = notes_in_selection[p][t][c][l].last_overwritten_ptcl.t,
-    c = notes_in_selection[p][t][c][l].last_overwritten_ptcl.c,
-    l = notes_in_selection[p][t][c][l].last_overwritten_ptcl.l
+  local restore_index = {
+    p = selected_notes[counter].current_location.p,
+    t = selected_notes[counter].current_location.t,
+    c = selected_notes[counter].current_location.c,
+    l = selected_notes[counter].current_location.l
   }
   
   --clear the column clean
-  song:pattern(ptcl_to_restore.p):track(ptcl_to_restore.t):line(ptcl_to_restore.l):note_column(ptcl_to_restore.c):clear()
+  song:pattern(restore_index.p):track(restore_index.t):line(restore_index.l):note_column(restore_index.c):clear()
   
   --exit this function here if this note is not supposed to restore anything
-  if not notes_in_selection[p][t][c][l].restore_flag then 
-    --print(("not restoring note p:%i, t:%i, c:%i l:%i because it's flag is set false!"):format(p,t,c,l))
+  if not selected_notes[counter].restore_flag then 
+    --print(("not restoring note %i because it's flag is set false!"):format(counter))
     return 
   end   
     
-  --print(("restoring note p:%i, t:%i, c:%i l:%i because it's flag is set true!"):format(p,t,c,l))
+  --print(("restoring note %i because it's flag is set true!"):format(counter))
     
   --access the column we will need to restore
-  local column_to_restore = song:pattern(ptcl_to_restore.p):track(ptcl_to_restore.t):line(ptcl_to_restore.l):note_column(ptcl_to_restore.c)
+  local column_to_restore = song:pattern(restore_index.p):track(restore_index.t):line(restore_index.l):note_column(restore_index.c)
   
   --access the values to restore
-  local stored_note_values = notes_in_selection[p][t][c][l].last_overwritten_values
+  local stored_note_values = selected_notes[counter].last_overwritten_values
   
   --set the flags all to true in order to fully restore the old note
   local flags = {
@@ -628,21 +603,21 @@ end
 --COPY STORED NOTE---------------------------------------------
 local function copy_stored_note(ptcl_to_copy,ptcl_to_store)
   
-  notes_in_selection[ptcl_to_store.p][ptcl_to_store.t][ptcl_to_store.c][ptcl_to_store.l].last_overwritten_values = {
+  selected_notes[ptcl_to_store.p][ptcl_to_store.t][ptcl_to_store.c][ptcl_to_store.l].last_overwritten_values = {
   
-    note_value = notes_in_selection[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.note_value,
+    note_value = selected_notes[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.note_value,
     
-    instrument_value = notes_in_selection[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.instrument_value,
+    instrument_value = selected_notes[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.instrument_value,
     
-    volume_value = notes_in_selection[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.volume_value,
+    volume_value = selected_notes[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.volume_value,
     
-    panning_value = notes_in_selection[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.panning_value,
+    panning_value = selected_notes[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.panning_value,
     
-    delay_value = notes_in_selection[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.delay_value,
+    delay_value = selected_notes[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.delay_value,
     
-    effect_number_value = notes_in_selection[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.effect_number_value,
+    effect_number_value = selected_notes[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.effect_number_value,
     
-    effect_amount_value = notes_in_selection[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.effect_amount_value
+    effect_amount_value = selected_notes[ptcl_to_copy.p][ptcl_to_copy.t][ptcl_to_copy.c][ptcl_to_copy.l].last_overwritten_values.effect_amount_value
   
   }
 
@@ -650,27 +625,24 @@ end
 --]]
 
 --GET EXISTING NOTE----------------------------------------------
-local function get_existing_note(p,t,c,l,new_ptcl)
-
-  --check if another note is already storing this spot, and going to restore it when it moves
-  local is_storable_bool,ptcl = is_storable({p=p,t=t,c=c,l=l},new_ptcl)
+local function get_existing_note(index,counter)
   
-  if not is_storable_bool then
+  if not is_storable(index,counter) then  --if this spot is already occupied by our own notes...
     
-    notes_in_selection[p][t][c][l].restore_flag = false
+    selected_notes[counter].restore_flag = false  --set this note's flag to false
     
-    print(("line:%i is NOT restorable by note from line %i"):format(new_ptcl.l, l))
+    if index.l == 7 and index.c == 2 then print(("line:%i is NOT storable by note %i"):format(index.l,counter)) end
     
-  else
+  else  --otherwise, if it is a "wild" note, or an empty spot, then
   
-    notes_in_selection[p][t][c][l].restore_flag = true
-     print(("line:%i IS restorable by note from line %i"):format(new_ptcl.l, l))
+    selected_notes[counter].restore_flag = true
+    if index.l == 7 and index.c == 2 then print(("line:%i IS storable by note %i"):format(index.l,counter)) end
     
     --access the new column that we need to store
-    local column_to_store = song:pattern(new_ptcl.p):track(new_ptcl.t):line(new_ptcl.l):note_column(new_ptcl.c)
+    local column_to_store = song:pattern(index.p):track(index.t):line(index.l):note_column(index.c)
       
     --store the data from the column we're overwriting
-    notes_in_selection[p][t][c][l].last_overwritten_values = {
+    selected_notes[counter].last_overwritten_values = {
       note_value = column_to_store.note_value,
       instrument_value = column_to_store.instrument_value,
       volume_value = column_to_store.volume_value,
@@ -682,64 +654,36 @@ local function get_existing_note(p,t,c,l,new_ptcl)
     
   end
   
-  --store the location of the note
-  notes_in_selection[p][t][c][l].last_overwritten_ptcl.p = new_ptcl.p
-  notes_in_selection[p][t][c][l].last_overwritten_ptcl.t = new_ptcl.t
-  notes_in_selection[p][t][c][l].last_overwritten_ptcl.c = new_ptcl.c
-  notes_in_selection[p][t][c][l].last_overwritten_ptcl.l = new_ptcl.l
-  
 end
 
 --CLEAR PREVIOUS LOCATION-------------------------------------
 local function clear_previous_location(p,t,c,l)
 
   --check if this note was empty/nil, and if so, return from this function without doing anything
-  if not notes_in_selection[p] or
-  not notes_in_selection[p][t] or
-  not notes_in_selection[p][t][c] or
-  not notes_in_selection[p][t][c][l] then
+  if not selected_notes[p] or
+  not selected_notes[p][t] or
+  not selected_notes[p][t][c] or
+  not selected_notes[counter] then
     return
   end
     
-  local new_p = notes_in_selection[p][t][c][l].last_overwritten_ptcl.p
-  local new_t = notes_in_selection[p][t][c][l].last_overwritten_ptcl.t
-  local new_c = notes_in_selection[p][t][c][l].last_overwritten_ptcl.c
-  local new_l = notes_in_selection[p][t][c][l].last_overwritten_ptcl.l
+  local new_p = selected_notes[counter].last_location.p
+  local new_t = selected_notes[counter].last_location.t
+  local new_c = selected_notes[counter].last_location.c
+  local new_l = selected_notes[counter].last_location.l
   
   song:pattern(new_p):track(new_t):line(new_l):note_column(new_c):clear()
 
 end
 
 --UPDATE CURRENT NOTE LOCATION----------------------------------------
-local function update_current_note_location(note_ptcl,ptcl)
-
-  if not current_note_locations[ptcl.p] then
-    current_note_locations[ptcl.p] = {}
-  end
+local function update_current_note_location(counter,new_index)
   
-  if not current_note_locations[ptcl.p][ptcl.t] then
-    current_note_locations[ptcl.p][ptcl.t] = {}
-  end 
-  
-  if not current_note_locations[ptcl.p][ptcl.t][ptcl.c] then
-    current_note_locations[ptcl.p][ptcl.t][ptcl.c] = {}
-  end
-  
-  current_note_locations[ptcl.p][ptcl.t][ptcl.c][ptcl.l] = true
-  
-  --print(("current_note_locations[%i][%i][%i][%i] set to true!"):format(ptcl.p,ptcl.t,ptcl.c,ptcl.l))
-  
-  local p, t, c, l = note_ptcl.p, note_ptcl.t, note_ptcl.c, note_ptcl.l
-  local old_ptcl = {
-    p = notes_in_selection[p][t][c][l].last_overwritten_ptcl.p,
-    t = notes_in_selection[p][t][c][l].last_overwritten_ptcl.t,
-    c = notes_in_selection[p][t][c][l].last_overwritten_ptcl.c,
-    l = notes_in_selection[p][t][c][l].last_overwritten_ptcl.l
-  }
-  
-  current_note_locations[old_ptcl.p][old_ptcl.t][old_ptcl.c][old_ptcl.l] = false
-  
-  --print(("current_note_locations[%i][%i][%i][%i] set to false!"):format(old_ptcl.p,old_ptcl.t,old_ptcl.c,old_ptcl.l))
+  --update the current location of the note
+  selected_notes[counter].current_location.p = new_index.p
+  selected_notes[counter].current_location.t = new_index.t
+  selected_notes[counter].current_location.c = new_index.c
+  selected_notes[counter].current_location.l = new_index.l
   
 end
 
@@ -753,79 +697,47 @@ end
 --RESTORE ALL RESIZED NOTES-----------------------------------
 local function restore_all_resized_notes()
 
-  --WORK ON FIRST TRACK--
-  for c = selection.start_column, column_to_end_on_in_first_track do
-    for l = selection.start_line, selection.end_line do
-      restore_old_note(selected_pattern,selection.start_track,c,l)
-    end
-  end
-  
-  --WORK ON MIDDLE TRACKS (if there are more than two tracks)--  
-  if selection.end_track - selection.start_track > 1 then
-    for t = selection.start_track + 1, selection.end_track - 1 do
-      for c = 1, visible_note_columns[t] do
-        for l = selection.start_line, selection.end_line do
-          restore_old_note(selected_pattern,t,c,l)     
-        end      
-      end
-    end
-  end
-  
-  --WORK ON LAST TRACK (if there is more than one track)--
-  if selection.end_track - selection.start_track > 0 then
-    for c = 1, math.min(selection.end_column, visible_note_columns[selection.end_track]) do
-      for l = selection.start_line, selection.end_line do
-        restore_old_note(selected_pattern,selection.end_track,c,l)   
-      end
-    end
+  for k in ipairs(selected_notes) do
+    restore_old_note(k)
   end
   
 end
 
 --PLACE NEW NOTE----------------------------------------------
-local function place_new_note(p,t,c,l)
-  
-  --check if this note was empty/nil, and if so, return from this function without doing anything
-  if not notes_in_selection[p] or
-  not notes_in_selection[p][t] or
-  not notes_in_selection[p][t][c] or
-  not notes_in_selection[p][t][c][l] then
-    return
-  end
+local function place_new_note(counter)
   
   --calculate the indexes where the new note will be, based on its placement value
-  local new_placement = notes_in_selection[p][t][c][l][8] * (time * time_multiplier + 1)
-    
-  local new_delay_difference = new_placement*total_delay_range
-   
-  local new_line_difference = math.floor(new_delay_difference / 256)
-    
-  local new_delay_value = new_delay_difference%256
-    
+  local new_placement = selected_notes[counter].placement * (time * time_multiplier + 1)    
+  local new_delay_difference = new_placement*total_delay_range   
+  local new_line_difference = math.floor(new_delay_difference / 256)    
+  local new_delay_value = new_delay_difference%256    
   local new_line = selection.start_line + new_line_difference
   
   --clear_previous_location(p,t,c,l)
   
-  local column, new_ptcl = find_correct_index(selected_seq,p,t,c,new_line)  
+  local column, new_index = find_correct_index(selected_notes[counter].original_index, new_line)  
   
   --store the note from the new spot we have moved to
-  get_existing_note(p,t,c,l,new_ptcl) 
+  get_existing_note(new_index, counter)
   
-  update_current_note_location({p = p, t = t, c = c, l = l}, new_ptcl)
+  update_current_note_location(counter, new_index)
   
   local note_values = {
-    note_value = notes_in_selection[p][t][c][l].note_value,
-    instrument_value = notes_in_selection[p][t][c][l].instrument_value,
-    volume_value = notes_in_selection[p][t][c][l].volume_value,
-    panning_value = notes_in_selection[p][t][c][l].panning_value,
-    delay_value = notes_in_selection[p][t][c][l].delay_value,
-    effect_number_value = notes_in_selection[p][t][c][l].effect_number_value,
-    effect_amount_value = notes_in_selection[p][t][c][l].effect_amount_value
+    note_value = selected_notes[counter].note_value,
+    instrument_value = selected_notes[counter].instrument_value,
+    volume_value = selected_notes[counter].volume_value,
+    panning_value = selected_notes[counter].panning_value,
+    delay_value = selected_notes[counter].delay_value,
+    effect_number_value = selected_notes[counter].effect_number_value,
+    effect_amount_value = selected_notes[counter].effect_amount_value
   }  
   
   note_values.delay_value = new_delay_value
   
   set_note_column_values(column, note_values, resize_flags)
+  
+  --set note's "is_placed" flag to true
+  selected_notes[counter].is_placed = true
   
 end
 
@@ -837,53 +749,42 @@ local function strum_selection()
     return(false)
   end
   
+  columns_overflowed_into = {}
+  
   --restore everything to how it was, so we don't run into our own notes during calculations
   restore_all_resized_notes()
   
-  columns_overflowed_into = {}
-  
-  --WORK ON FIRST TRACK--
-  for c = selection.start_column, column_to_end_on_in_first_track do
-    for l = selection.start_line, selection.end_line do
-      place_new_note(selected_pattern,selection.start_track,c,l)
-    end
+  --clear all note locations so we can lay them down cleanly
+  for k in ipairs(selected_notes) do
+    selected_notes[k].is_placed = false
   end
-  --show delay column for this track
-  song:track(selection.start_track).delay_column_visible = true
-  --update note column visibility
-  set_track_visibility(selection.start_track)
   
-  --WORK ON MIDDLE TRACKS (if there are more than two tracks)--  
+  --place our notes into place one by one
+  for k in ipairs(selected_notes) do
+    place_new_note(k)
+  end  
+  
+  --show delay columns and note columns...
+  --for first track
+  song:track(selection.start_track).delay_column_visible = true  
+  --for all middle tracks
   if selection.end_track - selection.start_track > 1 then
-    for t = selection.start_track + 1, selection.end_track - 1 do
-      for c = 1, visible_note_columns[t] do
-        for l = selection.start_line, selection.end_line do
-          place_new_note(selected_pattern,t,c,l)     
-        end      
-      end 
-      --show delay column for each middle track
-      song:track(t).delay_column_visible = true  
+    for t = selection.start_track + 1, selection.end_track - 1 do      
+      --show delay column
+      song:track(t).delay_column_visible = true     
       --update note column visibility
-      set_track_visibility(t) 
+      set_track_visibility(t)    
     end
-  end
+  end  
+  --and for the last track
+  --show delay column
+  song:track(selection.end_track).delay_column_visible = true  
+  --update note column visibility
+  set_track_visibility(selection.end_track)
   
-  --WORK ON LAST TRACK (if there is more than one track)--
-  if selection.end_track - selection.start_track > 0 then
-    for c = 1, math.min(selection.end_column, visible_note_columns[selection.end_track]) do
-      for l = selection.start_line, selection.end_line do
-        place_new_note(selected_pattern,selection.end_track,c,l)   
-      end
-    end
-    --show delay column for this track
-    song:track(selection.end_track).delay_column_visible = true  
-    --update note column visibility
-    set_track_visibility(selection.end_track)
-  end
-  
+  --update our multiplier text
   update_multiplier_text()
-
-  return(true)
+  
 end
 
 --SHOW WINDOW---------------------------------------------------- 
@@ -995,7 +896,7 @@ local function resize_selection()
       
   local result = reset_variables()
   if result then result = get_selection() end
-  if result then result = find_notes_in_selection() end
+  if result then result = find_selected_notes() end
   if result then result = calculate_range() end
   if result then result = calculate_note_placements() end
   if result then result = add_document_notifiers() end
