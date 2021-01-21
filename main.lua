@@ -676,6 +676,12 @@ local function apply_resize()
   
   columns_overflowed_into = {}
   
+  if value_was_typed then
+    
+  else
+    
+  end
+  
   --restore everything to how it was, so we don't run into our own notes during calculations
   for k in ipairs(selected_notes) do
     restore_old_note(k)
@@ -735,9 +741,13 @@ local function show_window()
           val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter function
           if val and -999 <= val and val <= 999 then --if val is a number, and within min/max range
             if debugvars.print_valuefield then print("tonumber = " .. val) end
+            local temptime = time
+            local temptime_multiplier = time_multiplier 
             time = val - 1
-            time_multiplier = 1
+            time_multiplier = 1                       
             apply_resize()
+            time = temptime
+            time_multiplier = temptime_multiplier
           end
           return val
         end,
