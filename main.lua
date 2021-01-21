@@ -10,7 +10,8 @@ local debugvars = {
   clear_pattern_one = false,
   print_notifier_attachments = false,
   print_notifier_triggers = false,
-  print_restorations = false
+  print_restorations = false,
+  print_valuefield = true
 }
 
 --GLOBALS-------------------------------------------------------------------------------------------- 
@@ -26,7 +27,7 @@ local vb_data = {
   default_margin = 0,
   sliders_width = 22,
   sliders_height = 127,
-  multipliers_size = 23,
+  multipliers_size = 23  
 }
 
 local selection
@@ -55,6 +56,8 @@ local time_max = 1
 local time_multiplier = 1
 local time_multiplier_min = 1
 local time_multiplier_max = 64
+
+local value_was_typed = false
 
 
 --RESET VARIABLES------------------------------
@@ -657,12 +660,14 @@ end
 --UPDATE MULTIPLIER TEXT---------------------------------
 local function update_multiplier_text()
 
-  vb.views.multiplier_text.text = ("%.4fx"):format((time * time_multiplier + 1))
+  vb.views.multiplier_text.value = (time * time_multiplier + 1)
 
 end
 
 --APPLY RESIZE------------------------------------------
 local function apply_resize()
+  
+  print("apply_resize()")
   
   if not valid_selection then
     app:show_error("There is no valid selection to operate on!")
@@ -715,12 +720,41 @@ local function show_window()
   --prepare the window content if it hasn't been done yet
   if not vb_data.window_content then    
     vb_data.window_content = vb:column {
-      
-      --make this a valuefield
-      vb:text {
+            
+      vb:valuefield {
         id = "multiplier_text",
-        text = "1.0000x",
-        align = "center"
+        align = "center",
+        min = -999,
+        max = 999,
+        value = 1,
+        
+        --tonumber converts any typed-in user input to a number value 
+        --(called only if value was typed)
+        tonumber = function(str)
+          local val = str:gsub("[^0-9.-]", "")
+          val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter function
+          if val and -999 <= val and val <= 999 then --if val is a number, and within min/max range
+            if debugvars.print_valuefield then print("tonumber = " .. val) end
+            time = val - 1
+            time_multiplier = 1
+            apply_resize()
+          end
+          return val
+        end,
+        
+        --tostring is called when field is clicked, 
+        --after tonumber is called,
+        --and after the notifier is called
+        --it converts the value to a formatted string to be displayed
+        tostring = function(value)
+          if debugvars.print_valuefield then print(("tostring = x%.04f"):format(value)) end
+          return ("x%.04f"):format(value)
+        end,        
+        
+        --notifier is called whenever the value is changed
+        notifier = function(value)
+        if debugvars.print_valuefield then print("notifier") end
+        end
       },
       
       vb:minislider {    
