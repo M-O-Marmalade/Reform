@@ -11,7 +11,7 @@ local debugvars = {
   print_notifier_attachments = false,
   print_notifier_triggers = false,
   print_restorations = false,
-  print_valuefield = true
+  print_valuefield = false
 }
 
 --GLOBALS-------------------------------------------------------------------------------------------- 
@@ -37,6 +37,7 @@ local selected_pattern
 local originally_visible_note_columns = {}
 local columns_overflowed_into = {}
 local column_to_end_on_in_first_track
+local is_note_track = {} --bools indicating if the track at that index supports note columns
 local selected_notes = {}
 local total_delay_range
 
@@ -58,6 +59,7 @@ local time_multiplier_min = 1
 local time_multiplier_max = 64
 
 local value_was_typed = false
+local typed_value = 1.0
 
 
 --RESET VARIABLES------------------------------
@@ -94,24 +96,30 @@ end
 
 --DEACTIVATE CONTROLS-------------------------------------
 local function deactivate_controls()
-
-  vb.views.time_slider.active = false
-  vb.views.time_multiplier_rotary.active = false
-  vb.views.overflow_flag_checkbox.active = false
-  vb.views.condense_flag_checkbox.active = false
-  vb.views.redistribute_flag_checkbox.active = false
+  
+  if vb_data.window_obj then
+    vb.views.multiplier_text.active = false
+    vb.views.time_slider.active = false
+    vb.views.time_multiplier_rotary.active = false
+    vb.views.overflow_flag_checkbox.active = false
+    vb.views.condense_flag_checkbox.active = false
+    vb.views.redistribute_flag_checkbox.active = false
+  end
 
   return(true)
 end
 
 --ACTIVATE CONTROLS-------------------------------------
 local function activate_controls()
-
-  vb.views.time_slider.active = true
-  vb.views.time_multiplier_rotary.active = true
-  vb.views.overflow_flag_checkbox.active = true
-  vb.views.condense_flag_checkbox.active = true
-  vb.views.redistribute_flag_checkbox.active = true
+  
+  if vb_data.window_obj then
+    vb.views.multiplier_text.active = true
+    vb.views.time_slider.active = true
+    vb.views.time_multiplier_rotary.active = true
+    vb.views.overflow_flag_checkbox.active = true
+    vb.views.condense_flag_checkbox.active = true
+    vb.views.redistribute_flag_checkbox.active = true
+  end
 
   return(true)
 end
@@ -251,6 +259,7 @@ local function get_selection()
   if not selection then
     app:show_error("no selection has been made")
     valid_selection = false
+    deactivate_controls()
     return(false)
   else
     valid_selection = true
@@ -275,30 +284,40 @@ local function find_selected_notes()
   end
   
   local counter = 1
+  is_note_track = {}
   
   --work on first track--
-  for l = selection.start_line, selection.end_line do
-    for c = selection.start_column, column_to_end_on_in_first_track do
-      counter = store_note(selected_seq,selected_pattern,selection.start_track,c,l,counter)       
+  if song:track(selection.start_track).type == 1 then
+    is_note_track[selection.start_track] = true
+    for l = selection.start_line, selection.end_line do
+      for c = selection.start_column, column_to_end_on_in_first_track do
+        counter = store_note(selected_seq,selected_pattern,selection.start_track,c,l,counter)       
+      end
     end
   end
   
   --work on middle tracks--
   if selection.end_track - selection.start_track > 1 then
     for t = selection.start_track + 1, selection.end_track - 1 do
-      for l = selection.start_line, selection.end_line do      
-        for c = 1, originally_visible_note_columns[t] do        
-          counter = store_note(selected_seq,selected_pattern,t,c,l)  
-        end      
+      if song:track(t).type == 1 then
+        is_note_track[t] = true
+        for l = selection.start_line, selection.end_line do      
+          for c = 1, originally_visible_note_columns[t] do        
+            counter = store_note(selected_seq,selected_pattern,t,c,l,counter)  
+          end      
+        end
       end    
     end
   end
   
   --work on last track--
   if selection.end_track - selection.start_track > 0 then
-    for l = selection.start_line, selection.end_line do
-      for c = 1, math.min(selection.end_column, originally_visible_note_columns[selection.end_track]) do
-        counter = store_note(selected_seq,selected_pattern,selection.end_track,c,l)    
+    if song:track(selection.end_track).type == 1  then
+      is_note_track[selection.end_track] = true
+      for l = selection.start_line, selection.end_line do
+        for c = 1, math.min(selection.end_column, originally_visible_note_columns[selection.end_track]) do
+          counter = store_note(selected_seq,selected_pattern,selection.end_track,c,l,counter)    
+        end
       end
     end
   end
@@ -620,12 +639,21 @@ local function place_new_note(counter)
   
   --calculate the indexes where the new note will be, based on its placement value
   local placement_to_use
-  if resize_flags.redistribute then 
+  if resize_flags.redistribute then --if redistribution flag is set, we use the redistributed places
     placement_to_use = selected_notes[counter].redistributed_placement
-  else
+  else  --otherwise, we use the original placements
     placement_to_use = selected_notes[counter].placement
   end
-  local new_placement = placement_to_use * (time * time_multiplier + 1)    
+  
+  --decide which time value to use (typed or sliders)
+  local time_to_use,time_multiplier_to_use
+  if value_was_typed then
+    time_to_use,time_multiplier_to_use = typed_value, 1
+  else
+    time_to_use,time_multiplier_to_use = time,time_multiplier
+  end
+  
+  local new_placement = placement_to_use * (time_to_use * time_multiplier_to_use + 1)    
   local new_delay_difference = new_placement*total_delay_range   
   local new_line_difference = math.floor(new_delay_difference / 256)    
   local new_delay_value = new_delay_difference%256    
@@ -660,27 +688,23 @@ end
 --UPDATE MULTIPLIER TEXT---------------------------------
 local function update_multiplier_text()
 
-  vb.views.multiplier_text.value = (time * time_multiplier + 1)
-
+  if value_was_typed then
+    vb.views.multiplier_text.value = (typed_value + 1)
+  else
+    vb.views.multiplier_text.value = (time * time_multiplier + 1)
+  end
 end
 
 --APPLY RESIZE------------------------------------------
 local function apply_resize()
   
-  print("apply_resize()")
-  
   if not valid_selection then
     app:show_error("There is no valid selection to operate on!")
+    deactivate_controls()
     return(false)
   end
   
   columns_overflowed_into = {}
-  
-  if value_was_typed then
-    
-  else
-    
-  end
   
   --restore everything to how it was, so we don't run into our own notes during calculations
   for k in ipairs(selected_notes) do
@@ -699,21 +723,30 @@ local function apply_resize()
   
   --show delay columns and note columns...
   --for first track
-  song:track(selection.start_track).delay_column_visible = true  
+  if is_note_track[selection.start_track] then
+    song:track(selection.start_track).delay_column_visible = true
+    set_track_visibility(selection.start_track)
+  end
+  
   --for all middle tracks
   if selection.end_track - selection.start_track > 1 then
-    for t = selection.start_track + 1, selection.end_track - 1 do      
-      --show delay column
-      song:track(t).delay_column_visible = true     
-      --update note column visibility
-      set_track_visibility(t)    
+    for t = selection.start_track + 1, selection.end_track - 1 do 
+      if is_note_track[t] then     
+        --show delay column
+        song:track(t).delay_column_visible = true     
+        --update note column visibility
+        set_track_visibility(t)
+      end
     end
   end  
+  
   --and for the last track
-  --show delay column
-  song:track(selection.end_track).delay_column_visible = true  
-  --update note column visibility
-  set_track_visibility(selection.end_track)
+  if is_note_track[selection.end_track] then
+    --show delay column
+    song:track(selection.end_track).delay_column_visible = true  
+    --update note column visibility
+    set_track_visibility(selection.end_track)
+  end
   
   --update our multiplier text
   update_multiplier_text()
@@ -737,17 +770,15 @@ local function show_window()
         --tonumber converts any typed-in user input to a number value 
         --(called only if value was typed)
         tonumber = function(str)
-          local val = str:gsub("[^0-9.-]", "")
+          local val = str:gsub("[^0-9.-]", "") --filter out the string to get numbers and decimals
           val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter function
           if val and -999 <= val and val <= 999 then --if val is a number, and within min/max range
             if debugvars.print_valuefield then print("tonumber = " .. val) end
-            local temptime = time
-            local temptime_multiplier = time_multiplier 
-            time = val - 1
-            time_multiplier = 1                       
+            --vb.views.time_slider.value = 0  --set the time slider to default value
+            --vb.views.time_multiplier_rotary.value = 1  --set time multiplier knob to default value
+            typed_value = val - 1
+            value_was_typed = true                     
             apply_resize()
-            time = temptime
-            time_multiplier = temptime_multiplier
           end
           return val
         end,
@@ -768,22 +799,23 @@ local function show_window()
       },
       
       vb:minislider {    
-      id = "time_slider", 
-      tooltip = "The time over which to spread the notes", 
-      min = time_min, 
-      max = time_max, 
-      value = time, 
-      width = vb_data.sliders_width, 
-      height = vb_data.sliders_height, 
-      notifier = function(value)
-        time = -value
-        apply_resize()
-      end    
+        id = "time_slider", 
+        tooltip = "Time", 
+        min = time_min, 
+        max = time_max, 
+        value = time, 
+        width = vb_data.sliders_width, 
+        height = vb_data.sliders_height, 
+        notifier = function(value)
+          time = -value
+          value_was_typed = false
+          apply_resize()
+        end    
       },
       
       vb:rotary { 
         id = "time_multiplier_rotary", 
-        tooltip = "Time multiplier", 
+        tooltip = "Time Multiplier", 
         min = time_multiplier_min, 
         max = time_multiplier_max, 
         value = time_multiplier, 
@@ -791,13 +823,14 @@ local function show_window()
         height = vb_data.multipliers_size, 
         notifier = function(value) 
           time_multiplier = value
+          value_was_typed = false
           apply_resize()
         end 
       },              
       
       vb:checkbox { 
         id = "overflow_flag_checkbox", 
-        tooltip = "Overflow Flag",
+        tooltip = "Overflow Mode",
         value = resize_flags.overflow, 
         notifier = function(value) 
           resize_flags.overflow = value
@@ -807,7 +840,7 @@ local function show_window()
       
       vb:checkbox { 
         id = "condense_flag_checkbox", 
-        tooltip = "Condense Flag",
+        tooltip = "Condense Mode",
         value = resize_flags.condense, 
         notifier = function(value) 
           resize_flags.condense = value
@@ -817,7 +850,7 @@ local function show_window()
       
       vb:checkbox { 
         id = "redistribute_flag_checkbox", 
-        tooltip = "Redistribute Flag",
+        tooltip = "Redistribute Mode",
         value = resize_flags.redistribute, 
         notifier = function(value) 
           resize_flags.redistribute = value
