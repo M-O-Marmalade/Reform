@@ -11,7 +11,9 @@ local debugvars = {
   print_notifier_attachments = false,
   print_notifier_triggers = false,
   print_restorations = false,
-  print_valuefield = false
+  print_valuefield = false,
+  clocks = true,
+  place_new_notes_clock = 0
 }
 
 --GLOBALS-------------------------------------------------------------------------------------------- 
@@ -715,11 +717,17 @@ local function apply_resize()
   for k in ipairs(selected_notes) do
     selected_notes[k].is_placed = false
   end
+
+  if debugvars.clocks then debugvars.place_new_notes_clock = os.clock() end
   
   --place our notes into place one by one
   for k in ipairs(selected_notes) do
     place_new_note(k)
   end  
+
+  if debugvars.clocks then
+    print("place_new_notes_clock: " .. os.clock() - debugvars.place_new_notes_clock)
+  end
   
   --show delay columns and note columns...
   --for first track
@@ -753,6 +761,27 @@ local function apply_resize()
   
 end
 
+--APPLY RESIZE NOTIFIER----------------------------------
+local function apply_resize_notifier()
+    
+  apply_resize()
+  
+  tool.app_idle_observable:remove_notifier(apply_resize_notifier)
+  
+  if debugvars.print_notifier_triggers then print("idle notifier triggered!") end
+end
+
+--ADD RESIZE IDLE NOTIFIER--------------------------------------
+local function add_resize_idle_notifier()
+
+  if not tool.app_idle_observable:has_notifier(apply_resize_notifier) then
+    tool.app_idle_observable:add_notifier(apply_resize_notifier)
+  
+    if debugvars.print_notifier_attachments then print("idle notifier attached!") end
+  end
+
+end
+
 --SHOW WINDOW---------------------------------------------------- 
 local function show_window()
 
@@ -778,7 +807,7 @@ local function show_window()
             --vb.views.time_multiplier_rotary.value = 1  --set time multiplier knob to default value
             typed_value = val - 1
             value_was_typed = true                     
-            apply_resize()
+            add_resize_idle_notifier()
           end
           return val
         end,
@@ -809,7 +838,7 @@ local function show_window()
         notifier = function(value)
           time = -value
           value_was_typed = false
-          apply_resize()
+          add_resize_idle_notifier()
         end    
       },
       
@@ -824,7 +853,7 @@ local function show_window()
         notifier = function(value) 
           time_multiplier = value
           value_was_typed = false
-          apply_resize()
+          add_resize_idle_notifier()
         end 
       },              
       
@@ -834,7 +863,7 @@ local function show_window()
         value = resize_flags.overflow, 
         notifier = function(value) 
           resize_flags.overflow = value
-          apply_resize()
+          add_resize_idle_notifier()
         end 
       },
       
@@ -844,7 +873,7 @@ local function show_window()
         value = resize_flags.condense, 
         notifier = function(value) 
           resize_flags.condense = value
-          apply_resize()
+          add_resize_idle_notifier()
         end 
       },
       
@@ -854,7 +883,7 @@ local function show_window()
         value = resize_flags.redistribute, 
         notifier = function(value) 
           resize_flags.redistribute = value
-          apply_resize()
+          add_resize_idle_notifier()
         end 
       }   
              
