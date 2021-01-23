@@ -1,6 +1,6 @@
 --Resize - main.lua--
 --DEBUG CONTROLS-------------------------------
-local debugmode = true 
+local debugmode = false 
 
 if debugmode then
   _AUTO_RELOAD_DEBUG = true
@@ -12,11 +12,28 @@ local debugvars = {
   print_notifier_triggers = false,
   print_restorations = false,
   print_valuefield = false,
-  clocks = true,
-  place_new_notes_clock = 0
+  clocks = false,
+  clocktotals = {},
+  tempclocks = {}
 }
 
---GLOBALS-------------------------------------------------------------------------------------------- 
+local function resetclock(num)
+  debugvars.clocktotals[num] = 0
+end
+
+local function setclock(num)
+  debugvars.tempclocks[num] = os.clock()  
+end
+
+local function addclock(num)  
+  debugvars.clocktotals[num] = debugvars.clocktotals[num] + (os.clock() - debugvars.tempclocks[num])
+end
+
+local function readclock(num,msg)
+  print(msg .. debugvars.clocktotals[num])  
+end
+
+--GLOBALS------------------------------------------------------------------------------------------
 local app = renoise.app() 
 local tool = renoise.tool()
 local song = nil
@@ -444,18 +461,31 @@ end
 --IS STORABLE-----------------------------------------
 local function is_storable(index,counter)
 
+if debugvars.clocks then
+setclock(7)
+end
+
   for k in pairs(selected_notes) do
     if (selected_notes[k].current_location.p == index.p and
     selected_notes[k].current_location.t == index.t and
     selected_notes[k].current_location.c == index.c and
     selected_notes[k].current_location.l == index.l) then
       if k ~= counter then
-        if selected_notes[k].is_placed then     
-          return false  --return false if we found a note matching this spot
+        if selected_notes[k].is_placed then    
+        
+if debugvars.clocks then
+addclock(7)
+end
+         
+          return false  --return false if we found a note matching this spot          
         end
       end
     end    
   end
+  
+if debugvars.clocks then
+addclock(7)
+end
   
   --return true if no notes were found to be storing data at this spot
   return true
@@ -598,19 +628,24 @@ end
 
 --GET EXISTING NOTE----------------------------------------------
 local function get_existing_note(index,counter)
-  
-  if not is_storable(index,counter) then  --if this spot is already occupied by our own notes...
+
+  --access the new column that we need to store
+  local column_to_store = song:pattern(index.p):track(index.t):line(index.l):note_column(index.c)
+
+  --if this spot is not empty, and is not already occupied by our own notes...
+  if (not column_to_store.is_empty) and (not is_storable(index,counter)) then
     
     selected_notes[counter].restore_flag = false  --set this note's flag to false
     
-  else  --otherwise, if it is a "wild" note, or an empty spot, then
+  else  --otherwise, if it is a note that should be stored...
   
-    selected_notes[counter].restore_flag = true
-    
-    --access the new column that we need to store
-    local column_to_store = song:pattern(index.p):track(index.t):line(index.l):note_column(index.c)
+if debugvars.clocks then
+setclock(8)
+end
+  
+    selected_notes[counter].restore_flag = true  --set this note's flag to true
       
-    --store the data from the column we're overwriting
+    --and store the data from the column we're overwriting
     selected_notes[counter].last_overwritten_values = {
       note_value = column_to_store.note_value,
       instrument_value = column_to_store.instrument_value,
@@ -620,6 +655,10 @@ local function get_existing_note(index,counter)
       effect_number_value = column_to_store.effect_number_value,
       effect_amount_value = column_to_store.effect_amount_value
     }
+    
+if debugvars.clocks then
+addclock(8)
+end
     
   end
   
@@ -638,6 +677,10 @@ end
 
 --PLACE NEW NOTE----------------------------------------------
 local function place_new_note(counter)
+
+if debugvars.clocks then
+setclock(2)
+end
   
   --calculate the indexes where the new note will be, based on its placement value
   local placement_to_use
@@ -661,12 +704,32 @@ local function place_new_note(counter)
   local new_delay_value = new_delay_difference%256    
   local new_line = selection.start_line + new_line_difference
   
+if debugvars.clocks then
+addclock(2)
+setclock(3)
+end
+  
   local column, new_index = find_correct_index(selected_notes[counter].original_index, new_line)  
+  
+if debugvars.clocks then
+addclock(3)
+setclock(4)
+end
   
   --store the note from the new spot we have moved to
   get_existing_note(new_index, counter)
   
+if debugvars.clocks then
+addclock(4)
+setclock(5)
+end
+  
   update_current_note_location(counter, new_index)
+  
+if debugvars.clocks then
+addclock(5)
+setclock(6)
+end
   
   local note_values = {
     note_value = selected_notes[counter].note_value,
@@ -684,6 +747,10 @@ local function place_new_note(counter)
   
   --set note's "is_placed" flag to true
   selected_notes[counter].is_placed = true
+  
+if debugvars.clocks then
+addclock(6)
+end
   
 end
 
@@ -718,16 +785,30 @@ local function apply_resize()
     selected_notes[k].is_placed = false
   end
 
-  if debugvars.clocks then debugvars.place_new_notes_clock = os.clock() end
+if debugvars.clocks then
+for i = 1, 9 do
+resetclock(i)
+end
+setclock(1)
+end
   
   --place our notes into place one by one
   for k in ipairs(selected_notes) do
     place_new_note(k)
-  end  
-
-  if debugvars.clocks then
-    print("place_new_notes_clock: " .. os.clock() - debugvars.place_new_notes_clock)
   end
+
+if debugvars.clocks then
+--readclock(2,"clock2: ")
+readclock(3,"find_correct_index clock: ")
+--readclock(4,"get_existing_note clock: ")
+--readclock(5,"update_current_note_location clock: ")
+readclock(6,"set_note_column_values clock: ")
+readclock(7,"is_storable clock: ")
+--readclock(8,"storing notes clock: ")
+
+addclock(1)
+readclock(1,"place_new_note total clock: ")
+end
   
   --show delay columns and note columns...
   --for first track
