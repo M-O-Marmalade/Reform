@@ -7,12 +7,11 @@ if debugmode then
 end
 
 local debugvars = {
-  clear_pattern_one = false,
   print_notifier_attachments = false,
   print_notifier_triggers = false,
-  print_restorations = false,
-  print_valuefield = false,
-  clocks = false,
+  print_restorations = false, --prints restorations of existing notes to terminal when set true
+  print_valuefield = false, --prints info from valuefields when set true
+  clocks = false, --prints out profiling clocks in different parts of the code when set true
   clocktotals = {},
   tempclocks = {}
 }
@@ -33,7 +32,7 @@ local function readclock(num,msg)
   print(msg .. debugvars.clocktotals[num])  
 end
 
---GLOBALS------------------------------------------------------------------------------------------
+--"GLOBALS"---------------------------------------------------------------------
 local app = renoise.app() 
 local tool = renoise.tool()
 local song = nil
@@ -46,7 +45,8 @@ local vb_data = {
   default_margin = 0,
   sliders_width = 22,
   sliders_height = 127,
-  multipliers_size = 23  
+  multipliers_size = 23,
+  notifiers_active = false
 }
 
 local selection
@@ -58,7 +58,9 @@ local columns_overflowed_into = {}
 local column_to_end_on_in_first_track
 local is_note_track = {} --bools indicating if the track at that index supports note columns
 local selected_notes = {}
+local total_line_range
 local total_delay_range
+local placed_notes = {}
 
 local resize_flags = {
   overflow = true,
@@ -77,18 +79,21 @@ local time_multiplier = 1
 local time_multiplier_min = 1
 local time_multiplier_max = 64
 
-local value_was_typed = false
-local typed_value = 1.0
+local time_was_typed = false
+local typed_time = 1.0
+
+local offset = 0
+local offset_multiplier = 1
 
 
 --RESET VARIABLES------------------------------
 local function reset_variables()
   
   if not song then song = renoise.song() end
-  originally_visible_note_columns = {} 
-  columns_overflowed_into = {} 
+  table.clear(originally_visible_note_columns)
+  table.clear(columns_overflowed_into)
   
-  selected_notes = {}
+  table.clear(selected_notes)
   
   time = 0
   time_multiplier = 1
@@ -105,10 +110,16 @@ end
 --RESET VIEW------------------------------------------
 local function reset_view()
 
+  vb_data.notifiers_active = false
+
   vb.views.time_slider.value = time
   vb.views.time_multiplier_rotary.value = time_multiplier
+  vb.views.time_slider.value = offset
+  vb.views.time_multiplier_rotary.value = offset_multiplier
   vb.views.overflow_flag_checkbox.value = resize_flags.overflow
   vb.views.condense_flag_checkbox.value = resize_flags.condense
+  
+  vb_data.notifiers_active = true
 
   return(true)
 end
@@ -120,6 +131,9 @@ local function deactivate_controls()
     vb.views.multiplier_text.active = false
     vb.views.time_slider.active = false
     vb.views.time_multiplier_rotary.active = false
+    vb.views.overflow_flag_checkbox.active = false
+    vb.views.offset_slider.active = false
+    vb.views.offset_multiplier_rotary.active = false
     vb.views.overflow_flag_checkbox.active = false
     vb.views.condense_flag_checkbox.active = false
     vb.views.redistribute_flag_checkbox.active = false
@@ -135,6 +149,8 @@ local function activate_controls()
     vb.views.multiplier_text.active = true
     vb.views.time_slider.active = true
     vb.views.time_multiplier_rotary.active = true
+    vb.views.offset_slider.active = true
+    vb.views.offset_multiplier_rotary.active = true
     vb.views.overflow_flag_checkbox.active = true
     vb.views.condense_flag_checkbox.active = true
     vb.views.redistribute_flag_checkbox.active = true
@@ -303,7 +319,7 @@ local function find_selected_notes()
   end
   
   local counter = 1
-  is_note_track = {}
+  table.clear(is_note_track)
   
   --work on first track--
   if song:track(selection.start_track).type == 1 then
@@ -346,8 +362,9 @@ end
 
 --CALCULATE RANGE------------------------------------------
 local function calculate_range()
-
-  total_delay_range = (selection.end_line - (selection.start_line - 1))*256
+  
+  total_line_range = selection.end_line - (selection.start_line - 1)
+  total_delay_range = total_line_range * 256
 
   return(true)
 end
@@ -461,34 +478,12 @@ end
 --IS STORABLE-----------------------------------------
 local function is_storable(index,counter)
 
-if debugvars.clocks then
-setclock(7)
-end
-
-  for k in pairs(selected_notes) do
-    if (selected_notes[k].current_location.p == index.p and
-    selected_notes[k].current_location.t == index.t and
-    selected_notes[k].current_location.c == index.c and
-    selected_notes[k].current_location.l == index.l) then
-      if k ~= counter then
-        if selected_notes[k].is_placed then    
-        
-if debugvars.clocks then
-addclock(7)
-end
-         
-          return false  --return false if we found a note matching this spot          
-        end
-      end
-    end    
-  end
+  if not placed_notes[index.p] then return true end
+  if not placed_notes[index.p][index.t] then return true end
+  if not placed_notes[index.p][index.t][index.l] then return true end
+  if not placed_notes[index.p][index.t][index.l][index.c] then return true--return true if no notes were found to be storing data at this spot
+  else return false end --return false if we found one of our notes already in this spot
   
-if debugvars.clocks then
-addclock(7)
-end
-  
-  --return true if no notes were found to be storing data at this spot
-  return true
 end
 
 --FIND CORRECT INDEX---------------------------------------
@@ -675,6 +670,19 @@ local function update_current_note_location(counter,new_index)
   
 end
 
+--ADD TO PLACED NOTES-----------------------------------------
+local function add_to_placed_notes(index,counter)
+
+  --create the table(s) at the specified index if they do not yet exist
+  if not placed_notes[index.p] then placed_notes[index.p] = {} end
+  if not placed_notes[index.p][index.t] then placed_notes[index.p][index.t] = {} end
+  if not placed_notes[index.p][index.t][index.l] then placed_notes[index.p][index.t][index.l] = {} end
+  
+  --set the index equal to the number of the note that has been put in it
+  placed_notes[index.p][index.t][index.l][index.c] = counter
+
+end
+
 --PLACE NEW NOTE----------------------------------------------
 local function place_new_note(counter)
 
@@ -692,13 +700,13 @@ end
   
   --decide which time value to use (typed or sliders)
   local time_to_use,time_multiplier_to_use
-  if value_was_typed then
-    time_to_use,time_multiplier_to_use = typed_value, 1
+  if time_was_typed then
+    time_to_use,time_multiplier_to_use = typed_time, 1
   else
     time_to_use,time_multiplier_to_use = time,time_multiplier
   end
   
-  local new_placement = placement_to_use * (time_to_use * time_multiplier_to_use + 1)    
+  local new_placement = placement_to_use * (time_to_use * time_multiplier_to_use + 1) + (offset * offset_multiplier)
   local new_delay_difference = new_placement*total_delay_range   
   local new_line_difference = math.floor(new_delay_difference / 256)    
   local new_delay_value = new_delay_difference%256    
@@ -745,8 +753,8 @@ end
   
   set_note_column_values(column, note_values)
   
-  --set note's "is_placed" flag to true
-  selected_notes[counter].is_placed = true
+  --add note to our placed_notes table
+  add_to_placed_notes(new_index,counter)
   
 if debugvars.clocks then
 addclock(6)
@@ -757,8 +765,8 @@ end
 --UPDATE MULTIPLIER TEXT---------------------------------
 local function update_multiplier_text()
 
-  if value_was_typed then
-    vb.views.multiplier_text.value = (typed_value + 1)
+  if time_was_typed then
+    vb.views.multiplier_text.value = (typed_time + 1)
   else
     vb.views.multiplier_text.value = (time * time_multiplier + 1)
   end
@@ -773,17 +781,15 @@ local function apply_resize()
     return(false)
   end
   
-  columns_overflowed_into = {}
+  table.clear(columns_overflowed_into)
   
   --restore everything to how it was, so we don't run into our own notes during calculations
   for k in ipairs(selected_notes) do
     restore_old_note(k)
   end
   
-  --clear all notes' "is_placed" flags so we can lay them down one by one cleanly
-  for k in ipairs(selected_notes) do
-    selected_notes[k].is_placed = false
-  end
+  --clear our "placed_notes" table so we can lay them down one by one cleanly
+  table.clear(placed_notes)
 
 if debugvars.clocks then
 for i = 1, 9 do
@@ -803,7 +809,7 @@ readclock(3,"find_correct_index clock: ")
 --readclock(4,"get_existing_note clock: ")
 --readclock(5,"update_current_note_location clock: ")
 readclock(6,"set_note_column_values clock: ")
-readclock(7,"is_storable clock: ")
+--readclock(7,"is_storable clock: ") --removed
 --readclock(8,"storing notes clock: ")
 
 addclock(1)
@@ -842,6 +848,11 @@ end
   
 end
 
+
+--if performance becomes a problem, we can use add_resize_idle_notifier() instead of apply_resize()
+--for now, we will use apply_resize() though, as performance is pretty good, and feels good to have changes be fluid
+
+--[[
 --APPLY RESIZE NOTIFIER----------------------------------
 local function apply_resize_notifier()
     
@@ -854,7 +865,8 @@ end
 
 --ADD RESIZE IDLE NOTIFIER--------------------------------------
 local function add_resize_idle_notifier()
-
+  
+  
   if not tool.app_idle_observable:has_notifier(apply_resize_notifier) then
     tool.app_idle_observable:add_notifier(apply_resize_notifier)
   
@@ -862,6 +874,8 @@ local function add_resize_idle_notifier()
   end
 
 end
+--]]
+
 
 --SHOW WINDOW---------------------------------------------------- 
 local function show_window()
@@ -869,6 +883,7 @@ local function show_window()
   --prepare the window content if it hasn't been done yet
   if not vb_data.window_content then    
     vb_data.window_content = vb:column {
+      width = 160,
             
       vb:valuefield {
         id = "multiplier_text",
@@ -886,9 +901,9 @@ local function show_window()
             if debugvars.print_valuefield then print("tonumber = " .. val) end
             --vb.views.time_slider.value = 0  --set the time slider to default value
             --vb.views.time_multiplier_rotary.value = 1  --set time multiplier knob to default value
-            typed_value = val - 1
-            value_was_typed = true                     
-            add_resize_idle_notifier()
+            typed_time = val - 1
+            time_was_typed = true                     
+            apply_resize()
           end
           return val
         end,
@@ -908,35 +923,86 @@ local function show_window()
         end
       },
       
-      vb:minislider {    
-        id = "time_slider", 
-        tooltip = "Time", 
-        min = time_min, 
-        max = time_max, 
-        value = time, 
-        width = vb_data.sliders_width, 
-        height = vb_data.sliders_height, 
-        notifier = function(value)
-          time = -value
-          value_was_typed = false
-          add_resize_idle_notifier()
-        end    
-      },
+      vb:horizontal_aligner {
+        mode = "center",
+        width = 160,
       
-      vb:rotary { 
-        id = "time_multiplier_rotary", 
-        tooltip = "Time Multiplier", 
-        min = time_multiplier_min, 
-        max = time_multiplier_max, 
-        value = time_multiplier, 
-        width = vb_data.multipliers_size, 
-        height = vb_data.multipliers_size, 
-        notifier = function(value) 
-          time_multiplier = value
-          value_was_typed = false
-          add_resize_idle_notifier()
-        end 
-      },              
+        vb:vertical_aligner {
+          mode = "center",
+          width = 32,
+          
+          vb:minislider {    
+            id = "time_slider", 
+            tooltip = "Time", 
+            min = time_min, 
+            max = time_max, 
+            value = time, 
+            width = vb_data.sliders_width, 
+            height = vb_data.sliders_height, 
+            notifier = function(value)
+              time = -value
+              if vb_data.notifiers_active then
+                time_was_typed = false
+                apply_resize() 
+              end
+            end    
+          },
+        
+          vb:rotary { 
+            id = "time_multiplier_rotary", 
+            tooltip = "Time Multiplier", 
+            min = time_multiplier_min, 
+            max = time_multiplier_max, 
+            value = time_multiplier, 
+            width = vb_data.multipliers_size, 
+            height = vb_data.multipliers_size, 
+            notifier = function(value) 
+              time_multiplier = value
+              if vb_data.notifiers_active then
+                time_was_typed = false
+                apply_resize()
+              end
+            end 
+          }        
+        },
+        
+        vb:vertical_aligner {
+          mode = "center",
+          width = 32,
+          
+          vb:minislider {    
+            id = "offset_slider", 
+            tooltip = "Offset", 
+            min = -1, 
+            max = 1, 
+            value = 0, 
+            width = vb_data.sliders_width, 
+            height = vb_data.sliders_height, 
+            notifier = function(value)
+              offset = -(value / total_line_range)
+              if vb_data.notifiers_active then
+                apply_resize()
+              end
+            end    
+          },
+          
+          vb:rotary { 
+            id = "offset_multiplier_rotary", 
+            tooltip = "Offset Multiplier", 
+            min = 1, 
+            max = 64, 
+            value = 1, 
+            width = vb_data.multipliers_size, 
+            height = vb_data.multipliers_size, 
+            notifier = function(value) 
+              offset_multiplier = value
+              if vb_data.notifiers_active then
+                apply_resize()
+              end
+            end 
+          }          
+        }   
+      },               
       
       vb:checkbox { 
         id = "overflow_flag_checkbox", 
@@ -944,7 +1010,9 @@ local function show_window()
         value = resize_flags.overflow, 
         notifier = function(value) 
           resize_flags.overflow = value
-          add_resize_idle_notifier()
+          if vb_data.notifiers_active then
+            apply_resize()
+          end
         end 
       },
       
@@ -954,7 +1022,9 @@ local function show_window()
         value = resize_flags.condense, 
         notifier = function(value) 
           resize_flags.condense = value
-          add_resize_idle_notifier()
+          if vb_data.notifiers_active then
+            apply_resize()
+          end
         end 
       },
       
@@ -964,7 +1034,9 @@ local function show_window()
         value = resize_flags.redistribute, 
         notifier = function(value) 
           resize_flags.redistribute = value
-          add_resize_idle_notifier()
+          if vb_data.notifiers_active then
+            apply_resize()
+          end
         end 
       }   
              
