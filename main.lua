@@ -72,18 +72,16 @@ local pattern_lengths = {} --an array of []{length, valid, notifier}
 local seq_length = { length = 0, valid = false }
 
 local time = 0
-local time_min = -1
-local time_max = 1
-
 local time_multiplier = 1
-local time_multiplier_min = 1
-local time_multiplier_max = 64
-
 local time_was_typed = false
-local typed_time = 1.0
+local typed_time = 1
 
 local offset = 0
 local offset_multiplier = 1
+local offset_was_typed = false
+local typed_offset = 0
+
+local anchor = 0
 
 
 --RESET VARIABLES------------------------------
@@ -95,8 +93,17 @@ local function reset_variables()
   
   table.clear(selected_notes)
   
-  time = 0
-  time_multiplier = 1
+time = 0
+time_multiplier = 1
+time_was_typed = false
+typed_time = 1
+
+offset = 0
+offset_multiplier = 1
+offset_was_typed = false
+typed_offset = 0
+
+anchor = 0
   
   resize_flags = {   
     overflow = true,
@@ -128,7 +135,7 @@ end
 local function deactivate_controls()
   
   if vb_data.window_obj then
-    vb.views.multiplier_text.active = false
+    vb.views.time_text.active = false
     vb.views.time_slider.active = false
     vb.views.time_multiplier_rotary.active = false
     vb.views.overflow_flag_checkbox.active = false
@@ -146,7 +153,7 @@ end
 local function activate_controls()
   
   if vb_data.window_obj then
-    vb.views.multiplier_text.active = true
+    vb.views.time_text.active = true
     vb.views.time_slider.active = true
     vb.views.time_multiplier_rotary.active = true
     vb.views.offset_slider.active = true
@@ -321,40 +328,39 @@ local function find_selected_notes()
   local counter = 1
   table.clear(is_note_track)
   
-  --work on first track--
-  if song:track(selection.start_track).type == 1 then
-    is_note_track[selection.start_track] = true
-    for l = selection.start_line, selection.end_line do
+  --scan through lines, tracks, and columns and store all notes to be resized
+  for l = selection.start_line, selection.end_line do 
+     
+    --work on first track
+    if song:track(selection.start_track).type == 1 then
+      is_note_track[selection.start_track] = true
       for c = selection.start_column, column_to_end_on_in_first_track do
-        counter = store_note(selected_seq,selected_pattern,selection.start_track,c,l,counter)       
+        counter = store_note(selected_seq,selected_pattern,selection.start_track,c,l,counter)
       end
     end
-  end
-  
-  --work on middle tracks--
-  if selection.end_track - selection.start_track > 1 then
-    for t = selection.start_track + 1, selection.end_track - 1 do
-      if song:track(t).type == 1 then
-        is_note_track[t] = true
-        for l = selection.start_line, selection.end_line do      
+      
+    --work on middle track(s)
+    if selection.end_track - selection.start_track > 1 then
+      for t = selection.start_track + 1, selection.end_track - 1 do
+        if song:track(t).type == 1 then
+          is_note_track[t] = true
           for c = 1, originally_visible_note_columns[t] do        
             counter = store_note(selected_seq,selected_pattern,t,c,l,counter)  
-          end      
-        end
-      end    
-    end
-  end
-  
-  --work on last track--
-  if selection.end_track - selection.start_track > 0 then
-    if song:track(selection.end_track).type == 1  then
-      is_note_track[selection.end_track] = true
-      for l = selection.start_line, selection.end_line do
-        for c = 1, math.min(selection.end_column, originally_visible_note_columns[selection.end_track]) do
-          counter = store_note(selected_seq,selected_pattern,selection.end_track,c,l,counter)    
+          end 
         end
       end
     end
+      
+    --work on last track--
+    if selection.end_track - selection.start_track > 0 then
+      if song:track(selection.end_track).type == 1  then
+        is_note_track[selection.end_track] = true
+        for c = 1, math.min(selection.end_column, originally_visible_note_columns[selection.end_track]) do
+          counter = store_note(selected_seq,selected_pattern,selection.end_track,c,l,counter)
+        end
+      end
+    end
+    
   end
     
   return(true)
@@ -363,8 +369,8 @@ end
 --CALCULATE RANGE------------------------------------------
 local function calculate_range()
   
-  total_line_range = selection.end_line - (selection.start_line - 1)
-  total_delay_range = total_line_range * 256
+  total_line_range = selection.end_line - selection.start_line
+  total_delay_range = (total_line_range * 256) + 255
 
   return(true)
 end
@@ -372,7 +378,7 @@ end
 --CALCULATE NOTE PLACEMENTS------------------------------------------
 local function calculate_note_placements()
   
-  --calculate original placements
+  --calculate original note placements in our selection range
   for k in ipairs(selected_notes) do
     
     local line_difference = selected_notes[k].original_index.l - selection.start_line
@@ -383,7 +389,7 @@ local function calculate_note_placements()
     
     selected_notes[k].placement = note_place
   
-  end    
+  end
   
   --calculate redistributed placements
   local amount_of_notes = #selected_notes
@@ -689,6 +695,25 @@ local function place_new_note(counter)
 if debugvars.clocks then
 setclock(2)
 end
+
+  --decide which time value to use (typed or sliders)
+  local time_to_use
+  if time_was_typed then
+    time_to_use = typed_time
+  else
+    time_to_use = time * time_multiplier + 1
+  end
+  
+  --decide which offset value to use (typed or sliders)
+  local offset_to_use
+  if offset_was_typed then
+    offset_to_use = typed_offset
+  else
+    offset_to_use = offset * offset_multiplier
+  end
+  
+  --set our anchorpoint for where "x0.0" would end up when resizing, 0 - 1 in our selection range
+  local anchorpoint = anchor * total_delay_range
   
   --calculate the indexes where the new note will be, based on its placement value
   local placement_to_use
@@ -698,18 +723,13 @@ end
     placement_to_use = selected_notes[counter].placement
   end
   
-  --decide which time value to use (typed or sliders)
-  local time_to_use,time_multiplier_to_use
-  if time_was_typed then
-    time_to_use,time_multiplier_to_use = typed_time, 1
-  else
-    time_to_use,time_multiplier_to_use = time,time_multiplier
-  end
+  --recalculate our placements based on our new anchorpoint
+  placement_to_use = placement_to_use - anchor
   
-  local new_placement = placement_to_use * (time_to_use * time_multiplier_to_use + 1) + (offset * offset_multiplier)
-  local new_delay_difference = new_placement*total_delay_range   
+  placement_to_use = placement_to_use * time_to_use + offset_to_use
+  local new_delay_difference = (placement_to_use*total_delay_range) + anchorpoint
   local new_line_difference = math.floor(new_delay_difference / 256)    
-  local new_delay_value = new_delay_difference%256    
+  local new_delay_value = (new_delay_difference%256)
   local new_line = selection.start_line + new_line_difference
   
 if debugvars.clocks then
@@ -762,14 +782,21 @@ end
   
 end
 
---UPDATE MULTIPLIER TEXT---------------------------------
-local function update_multiplier_text()
+--UPDATE TIME TEXT---------------------------------
+local function update_valuefields()
 
   if time_was_typed then
-    vb.views.multiplier_text.value = (typed_time + 1)
+    vb.views.time_text.value = typed_time
   else
-    vb.views.multiplier_text.value = (time * time_multiplier + 1)
+    vb.views.time_text.value = time * time_multiplier + 1
   end
+  
+  if offset_was_typed then
+    vb.views.offset_text.value = typed_offset
+  else
+    vb.views.offset_text.value = (offset * offset_multiplier) * (total_line_range + 1)
+  end
+  
 end
 
 --APPLY RESIZE------------------------------------------
@@ -844,7 +871,7 @@ end
   end
   
   --update our multiplier text
-  update_multiplier_text()
+  update_valuefields()
   
 end
 
@@ -884,44 +911,6 @@ local function show_window()
   if not vb_data.window_content then    
     vb_data.window_content = vb:column {
       width = 160,
-            
-      vb:valuefield {
-        id = "multiplier_text",
-        align = "center",
-        min = -999,
-        max = 999,
-        value = 1,
-        
-        --tonumber converts any typed-in user input to a number value 
-        --(called only if value was typed)
-        tonumber = function(str)
-          local val = str:gsub("[^0-9.-]", "") --filter out the string to get numbers and decimals
-          val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter function
-          if val and -999 <= val and val <= 999 then --if val is a number, and within min/max range
-            if debugvars.print_valuefield then print("tonumber = " .. val) end
-            --vb.views.time_slider.value = 0  --set the time slider to default value
-            --vb.views.time_multiplier_rotary.value = 1  --set time multiplier knob to default value
-            typed_time = val - 1
-            time_was_typed = true                     
-            apply_resize()
-          end
-          return val
-        end,
-        
-        --tostring is called when field is clicked, 
-        --after tonumber is called,
-        --and after the notifier is called
-        --it converts the value to a formatted string to be displayed
-        tostring = function(value)
-          if debugvars.print_valuefield then print(("tostring = x%.04f"):format(value)) end
-          return ("x%.04f"):format(value)
-        end,        
-        
-        --notifier is called whenever the value is changed
-        notifier = function(value)
-        if debugvars.print_valuefield then print("notifier") end
-        end
-      },
       
       vb:horizontal_aligner {
         mode = "center",
@@ -931,16 +920,56 @@ local function show_window()
           mode = "center",
           width = 32,
           
+          vb:valuefield {
+            id = "time_text",
+            align = "center",
+            min = -999,
+            max = 999,
+            value = 1,
+            
+            --tonumber converts any typed-in user input to a number value 
+            --(called only if value was typed)
+            tonumber = function(str)
+              local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
+              val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
+              if val and -999 <= val and val <= 999 then --if val is a number, and within min/max
+                if debugvars.print_valuefield then print("tonumber = " .. val) end
+                typed_time = val
+                time_was_typed = true                     
+                apply_resize()
+              end
+              return val
+            end,
+            
+            --tostring is called when field is clicked, 
+            --after tonumber is called,
+            --and after the notifier is called
+            --it converts the value to a formatted string to be displayed
+            tostring = function(value)
+              if debugvars.print_valuefield then print(("tostring = x%.2f"):format(value)) end
+              return ("x%.2f"):format(value)
+            end,        
+            
+            --notifier is called whenever the value is changed
+            notifier = function(value)
+            if debugvars.print_valuefield then print("notifier") end
+            end
+          },
+          
           vb:minislider {    
             id = "time_slider", 
             tooltip = "Time", 
-            min = time_min, 
-            max = time_max, 
+            min = -1, 
+            max = 1, 
             value = time, 
             width = vb_data.sliders_width, 
             height = vb_data.sliders_height, 
             notifier = function(value)
-              time = -value
+              if anchor == 0 then
+                time = -value
+              else
+                time = value
+              end
               if vb_data.notifiers_active then
                 time_was_typed = false
                 apply_resize() 
@@ -951,8 +980,8 @@ local function show_window()
           vb:rotary { 
             id = "time_multiplier_rotary", 
             tooltip = "Time Multiplier", 
-            min = time_multiplier_min, 
-            max = time_multiplier_max, 
+            min = 1, 
+            max = 64, 
             value = time_multiplier, 
             width = vb_data.multipliers_size, 
             height = vb_data.multipliers_size, 
@@ -970,6 +999,42 @@ local function show_window()
           mode = "center",
           width = 32,
           
+          vb:valuefield {
+            id = "offset_text",
+            align = "center",
+            min = -999,
+            max = 999,
+            value = 0,
+            
+            --tonumber converts any typed-in user input to a number value 
+            --(called only if value was typed)
+            tonumber = function(str)
+              local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
+              val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
+              if val and -999 <= val and val <= 999 then --if val is a number, and within min/max
+                if debugvars.print_valuefield then print("tonumber = " .. val) end
+                typed_offset = val / (total_line_range + 1)
+                offset_was_typed = true
+                apply_resize()
+              end
+              return val
+            end,
+            
+            --tostring is called when field is clicked, 
+            --after tonumber is called,
+            --and after the notifier is called
+            --it converts the value to a formatted string to be displayed
+            tostring = function(value)
+              if debugvars.print_valuefield then print(("tostring = %.1f lines"):format(value)) end
+              return ("%.1f lines"):format(value)
+            end,        
+            
+            --notifier is called whenever the value is changed
+            notifier = function(value)
+            if debugvars.print_valuefield then print("notifier") end
+            end
+          },
+          
           vb:minislider {    
             id = "offset_slider", 
             tooltip = "Offset", 
@@ -979,7 +1044,8 @@ local function show_window()
             width = vb_data.sliders_width, 
             height = vb_data.sliders_height, 
             notifier = function(value)
-              offset = -(value / total_line_range)
+              offset_was_typed = false
+              offset = -(value / (total_line_range + 1))
               if vb_data.notifiers_active then
                 apply_resize()
               end
@@ -994,15 +1060,32 @@ local function show_window()
             value = 1, 
             width = vb_data.multipliers_size, 
             height = vb_data.multipliers_size, 
-            notifier = function(value) 
+            notifier = function(value)
+              offset_was_typed = false
               offset_multiplier = value
               if vb_data.notifiers_active then
                 apply_resize()
               end
             end 
           }          
-        }   
+        }
       },               
+      
+      vb:vertical_aligner {
+        mode = "center",
+        width = 32,
+        
+        vb:switch {
+          id = "anchor_switch",
+          width = 64,
+          value = 1,
+          items = {"Top", "End"},
+          notifier = function(value)
+            anchor = value - 1
+            vb.views.time_slider.value = -vb.views.time_slider.value
+          end
+        }
+      },
       
       vb:checkbox { 
         id = "overflow_flag_checkbox", 
