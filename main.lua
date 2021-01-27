@@ -60,6 +60,9 @@ local is_note_track = {} --bools indicating if the track at that index supports 
 local selected_notes = {}
 local total_line_range
 local total_delay_range
+local inclusive_delay_range
+local earliest_placement
+local latest_placement
 local placed_notes = {}
 
 local resize_flags = {
@@ -81,7 +84,8 @@ local offset_multiplier = 1
 local offset_was_typed = false
 local typed_offset = 0
 
-local anchor = 0
+local anchor = 0  -- 0 = top, 1 = bottom
+local anchor_type = 1 -- 1 = note, 2 = selection
 
 
 --RESET VARIABLES------------------------------
@@ -93,17 +97,20 @@ local function reset_variables()
   
   table.clear(selected_notes)
   
-time = 0
-time_multiplier = 1
-time_was_typed = false
-typed_time = 1
-
-offset = 0
-offset_multiplier = 1
-offset_was_typed = false
-typed_offset = 0
-
-anchor = 0
+  time = 0
+  time_multiplier = 1
+  time_was_typed = false
+  typed_time = 1
+  
+  offset = 0
+  offset_multiplier = 1
+  offset_was_typed = false
+  typed_offset = 0
+  
+  anchor = 0
+  
+  earliest_placement = 1
+  latest_placement = 0
   
   resize_flags = {   
     overflow = true,
@@ -366,17 +373,19 @@ local function find_selected_notes()
   return(true)
 end
 
---CALCULATE RANGE------------------------------------------
-local function calculate_range()
-  
-  total_line_range = selection.end_line - selection.start_line
-  total_delay_range = (total_line_range * 256) + 255
+--REMAP RANGE-------------------------------------------------------
+local function remap_range(val,lo1,hi1,lo2,hi2)
 
-  return(true)
+  return lo2 + (hi2 - lo2) * ((val - lo1) / (hi1 - lo1))
+
 end
 
 --CALCULATE NOTE PLACEMENTS------------------------------------------
 local function calculate_note_placements()
+
+  total_line_range = selection.end_line - selection.start_line
+  total_delay_range = (total_line_range * 256) + 255
+  inclusive_delay_range = total_delay_range + 1
   
   --calculate original note placements in our selection range
   for k in ipairs(selected_notes) do
@@ -388,6 +397,10 @@ local function calculate_note_placements()
     local note_place = delay_difference / total_delay_range
     
     selected_notes[k].placement = note_place
+    
+    --record the earliest and latest note placements in the selection
+    if note_place < earliest_placement then earliest_placement = note_place end
+    if note_place > latest_placement then latest_placement = note_place end
   
   end
   
@@ -395,6 +408,16 @@ local function calculate_note_placements()
   local amount_of_notes = #selected_notes
   for k in ipairs(selected_notes) do
     selected_notes[k].redistributed_placement = (k - 1) / amount_of_notes
+  end
+  
+  --calculate redistributed placements in note range
+  for k in ipairs(selected_notes) do
+    selected_notes[k].redistributed_placement_in_note_range = remap_range(
+      selected_notes[k].redistributed_placement,
+      0,
+      1,
+      earliest_placement,
+      latest_placement + (latest_placement - earliest_placement) / amount_of_notes)
   end
   
   return(true)
@@ -712,22 +735,40 @@ end
     offset_to_use = offset * offset_multiplier
   end
   
-  --set our anchorpoint for where "x0.0" would end up when resizing, 0 - 1 in our selection range
-  local anchorpoint = anchor * total_delay_range
+  --set our anchor for where "x0.0" would end up when resizing, 0 - 1 in our selection range
+  local anchor_to_use
+  if anchor_type == 1 then
+    if anchor == 0 then anchor_to_use = earliest_placement  
+    else anchor_to_use = latest_placement end
+  else
+    if anchor == 0 then anchor_to_use = 0   
+    else anchor_to_use = 1 end
+  end
   
   --calculate the indexes where the new note will be, based on its placement value
   local placement_to_use
   if resize_flags.redistribute then --if redistribution flag is set, we use the redistributed places
-    placement_to_use = selected_notes[counter].redistributed_placement
+    if anchor_type == 1 then
+      placement_to_use = selected_notes[counter].redistributed_placement_in_note_range
+    else
+      placement_to_use = selected_notes[counter].redistributed_placement
+    end
   else  --otherwise, we use the original placements
     placement_to_use = selected_notes[counter].placement
   end
   
-  --recalculate our placements based on our new anchorpoint
-  placement_to_use = placement_to_use - anchor
+  local range_to_use
+  if resize_flags.redistribute then
+    range_to_use = inclusive_delay_range
+  else
+    range_to_use = total_delay_range
+  end
+  
+  --recalculate our placements based on our new anchor
+  placement_to_use = placement_to_use - anchor_to_use
   
   placement_to_use = placement_to_use * time_to_use + offset_to_use
-  local new_delay_difference = (placement_to_use*total_delay_range) + anchorpoint
+  local new_delay_difference = (placement_to_use*range_to_use) + (anchor_to_use * range_to_use)
   local new_line_difference = math.floor(new_delay_difference / 256)    
   local new_delay_value = (new_delay_difference%256)
   local new_line = selection.start_line + new_line_difference
@@ -782,7 +823,7 @@ end
   
 end
 
---UPDATE TIME TEXT---------------------------------
+--UPDATE VALUEFIELDS---------------------------------
 local function update_valuefields()
 
   if time_was_typed then
@@ -801,6 +842,8 @@ end
 
 --APPLY RESIZE------------------------------------------
 local function apply_resize()
+
+  print("apply_resize")
   
   if not valid_selection then
     app:show_error("There is no valid selection to operate on!")
@@ -903,6 +946,16 @@ local function add_resize_idle_notifier()
 end
 --]]
 
+--REPOSITION CONTROLS----------------------------------------------
+local function reposition_controls()
+
+  vb_data.notifiers_active = false
+  
+  vb.views.time_slider.value = -vb.views.time_slider.value
+  
+  vb_data.notifiers_active = true
+
+end
 
 --SHOW WINDOW---------------------------------------------------- 
 local function show_window()
@@ -1043,10 +1096,10 @@ local function show_window()
             value = 0, 
             width = vb_data.sliders_width, 
             height = vb_data.sliders_height, 
-            notifier = function(value)
-              offset_was_typed = false
-              offset = -(value / (total_line_range + 1))
+            notifier = function(value)            
               if vb_data.notifiers_active then
+                offset_was_typed = false
+                offset = -(value / (total_line_range + 1))
                 apply_resize()
               end
             end    
@@ -1081,8 +1134,23 @@ local function show_window()
           value = 1,
           items = {"Top", "End"},
           notifier = function(value)
-            anchor = value - 1
-            vb.views.time_slider.value = -vb.views.time_slider.value
+            if vb_data.notifiers_active then
+              anchor = value - 1
+              reposition_controls()
+              apply_resize()
+            end
+          end
+        },
+        vb:switch {
+          id = "anchor_type_switch",
+          width = 64,
+          value = 1,
+          items = {"Note", "Select"},
+          notifier = function(value)
+            anchor_type = value
+            if vb_data.notifiers_active then
+              apply_resize()
+            end
           end
         }
       },
@@ -1141,7 +1209,6 @@ local function resize_selection()
   local result = reset_variables()
   if result then result = get_selection() end
   if result then result = find_selected_notes() end
-  if result then result = calculate_range() end
   if result then result = calculate_note_placements() end
   if result then result = add_document_notifiers() end
   if result then result = show_window() end
