@@ -946,8 +946,8 @@ local function show_window()
             --and after the notifier is called
             --it converts the value to a formatted string to be displayed
             tostring = function(value)
-              if debugvars.print_valuefield then print(("tostring = x%.2f"):format(value)) end
-              return ("x%.2f"):format(value)
+              if debugvars.print_valuefield then print(("tostring = x%.4f"):format(value)) end
+              return ("x%.4f"):format(value)
             end,        
             
             --notifier is called whenever the value is changed
