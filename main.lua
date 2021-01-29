@@ -7,10 +7,10 @@ if debugmode then
 end
 
 local debugvars = {
-  print_notifier_attachments = false,
-  print_notifier_triggers = false,
+  print_notifier_attach = false,
+  print_notifier_trigger = false,
   print_restorations = false, --prints restorations of existing notes to terminal when set true
-  print_valuefield = false, --prints info from valuefields when set true
+  print_valuefield = true, --prints info from valuefields when set true
   clocks = false, --prints out profiling clocks in different parts of the code when set true
   clocktotals = {},
   tempclocks = {}
@@ -49,13 +49,9 @@ local vb = renoise.ViewBuilder()
 local vb_data = {
   window_obj = nil,
   window_title = "Resize",
-  window_content = nil,
-  default_margin = 0,
-  sliders_width = 22,
-  sliders_height = 127,
-  multipliers_size = 23,
-  notifiers_active = false
+  window_content = nil
 }
+local vb_notifiers_on
 
 local selection
 local valid_selection
@@ -98,11 +94,14 @@ local anchor_type = 1 -- 1 = note, 2 = selection
 --RESET VARIABLES------------------------------
 local function reset_variables()
   
+  --get our song reference if we don't have it yet
   if not song then song = renoise.song() end
+  
   table.clear(originally_visible_note_columns)
   table.clear(columns_overflowed_into)
-  
+  table.clear(is_note_track) 
   table.clear(selected_notes)
+  table.clear(placed_notes)
   
   time = 0
   time_multiplier = 1
@@ -126,13 +125,13 @@ local function reset_variables()
     redistribute = false
   }
   
-  return(true)
+  return true
 end
 
 --RESET VIEW------------------------------------------
 local function reset_view()
 
-  vb_data.notifiers_active = false
+  vb_notifiers_on = false
 
   vb.views.time_slider.value = time
   vb.views.time_multiplier_rotary.value = time_multiplier
@@ -144,9 +143,9 @@ local function reset_view()
   vb.views.anchor_switch.value = anchor + 1
   vb.views.anchor_type_switch.value = anchor_type
   
-  vb_data.notifiers_active = true
+  vb_notifiers_on = true
 
-  return(true)
+  return true
 end
 
 --DEACTIVATE CONTROLS-------------------------------------
@@ -165,7 +164,7 @@ local function deactivate_controls()
     vb.views.redistribute_flag_checkbox.active = false
   end
 
-  return(true)
+  return true
 end
 
 --ACTIVATE CONTROLS-------------------------------------
@@ -183,26 +182,18 @@ local function activate_controls()
     vb.views.redistribute_flag_checkbox.active = true
   end
 
-  return(true)
-end
-
---INVALIDATE SELECTION-------------------------------------
-local function invalidate_selection()
-
-  --invalidate selection
-  valid_selection = false
-  
-  deactivate_controls()
-
+  return true
 end
   
 --RELEASE DOCUMENT------------------------------------------
 local function release_document()
 
-  if debugvars.print_notifier_triggers then print("release document notifier triggered!") end
+  if debugvars.print_notifier_trigger then print("release document notifier triggered!") end
   
   --invalidate selection
-  invalidate_selection()
+  valid_selection = false
+  
+  deactivate_controls()
   
   --invalidate recorded sequence length
   seq_length.valid = false
@@ -217,12 +208,12 @@ end
 --NEW DOCUMENT------------------------------------------
 local function new_document()
 
-  if debugvars.print_notifier_triggers then print("new document notifier triggered!") end
+  if debugvars.print_notifier_trigger then print("new document notifier triggered!") end
 
   song = renoise.song()
   
   reset_variables()
-  --reset_view()
+  reset_view()
   
 end
 
@@ -233,17 +224,17 @@ local function add_document_notifiers()
   if not tool.app_release_document_observable:has_notifier(release_document) then
     tool.app_release_document_observable:add_notifier(release_document)
     
-    if debugvars.print_notifier_attachments then print("release document notifier attached!") end    
+    if debugvars.print_notifier_attach then print("release document notifier attached!") end    
   end
 
   --add new document notifier if it doesn't exist yet
   if not tool.app_new_document_observable:has_notifier(new_document) then
     tool.app_new_document_observable:add_notifier(new_document)
     
-    if debugvars.print_notifier_attachments then print("new document notifier attached!") end    
+    if debugvars.print_notifier_attach then print("new document notifier attached!") end    
   end  
 
-  return(true)
+  return true
 end
 
 --STORE NOTE--------------------------------------------
@@ -252,9 +243,11 @@ local function store_note(s,p,t,c,l,counter)
   local column_to_store = song:pattern(p):track(t):line(l):note_column(c)
   
   if not column_to_store.is_empty then
-  
+    
+    --create a table to store our note info
     selected_notes[counter] = {}
     
+    --record the original index where the note came from
     selected_notes[counter].original_index = {
       s = s,
       p = p,
@@ -263,6 +256,7 @@ local function store_note(s,p,t,c,l,counter)
       l = l
     }
     
+    --store all of the values for this note column (note,instr,vol,pan,dly,fx)
     selected_notes[counter].note_value = column_to_store.note_value
     selected_notes[counter].instrument_value = column_to_store.instrument_value
     selected_notes[counter].volume_value = column_to_store.volume_value 
@@ -273,15 +267,6 @@ local function store_note(s,p,t,c,l,counter)
     
     --initialize the location of the note
     selected_notes[counter].current_location = {
-      s = s, 
-      p = p, 
-      t = t, 
-      c = c, 
-      l = l
-    }
-    
-    --initialize the last location of the note
-    selected_notes[counter].last_location = {
       s = s, 
       p = p, 
       t = t, 
@@ -303,31 +288,34 @@ local function store_note(s,p,t,c,l,counter)
     --initalize our flag so that the note will leave an empty space behind when it moves
     selected_notes[counter].restore_flag = true
     
+    --increment our index counter by one, as we have just finished storing one new note in our table
     counter = counter + 1
   
   end
   
-  return(counter)
+  return counter
 end
 
 --GET SELECTION-----------------------------------------
 local function get_selection()
 
-  --get selection
+  --get selection box info (sequence/pattern selection is in, and selection box range)
   selected_seq = song.selected_sequence_index
   selected_pattern = song.sequencer:pattern(selected_seq)
   selection = song.selection_in_pattern
   
+  --if there is no selection box, then we show an error, and disallow further operations
   if not selection then
     app:show_error("no selection has been made")
     valid_selection = false
     deactivate_controls()
-    return(false)
-  else
-    valid_selection = true
+    return false
   end
+  
+  --if there was a selection box, we will set valid_selection to true, and continue
+  valid_selection = true
 
-  return(true)
+  return true
 end
 
 --FIND NOTES IN SELECTION---------------------------------------------
@@ -383,7 +371,7 @@ local function find_selected_notes()
     
   end
     
-  return(true)
+  return true
 end
 
 --REMAP RANGE-------------------------------------------------------
@@ -442,7 +430,7 @@ local function calculate_note_placements()
       if amount_of_notes == 1 then selected_notes[k].redistributed_placement_in_note_range = 0 end
   end
   
-  return(true)
+  return true
 end
 
 --ADD PATTERN LENGTH NOTIFIER-----------------------------------
@@ -451,7 +439,7 @@ local function add_pattern_length_notifier(p)
   --define the notifier function
   local function pattern_length_notifier()
     
-    if debugvars.print_notifier_triggers then
+    if debugvars.print_notifier_trigger then
       print(("pattern %i's length notifier triggered!!"):format(p))
     end
     
@@ -491,18 +479,18 @@ local function get_pattern_length_at_seq(s)
     --add our notifier to invalidate our recorded pattern length if this pattern's length changes
     add_pattern_length_notifier(p)
     
-    if debugvars.print_notifier_attachments then
+    if debugvars.print_notifier_attach then
       print(("pattern %i's length notifier attached!!"):format(p))
     end
   end
   
-  return(pattern_lengths[s].length)
+  return pattern_lengths[s].length
 end
 
 --SEQUENCE COUNT NOTIFIER---------------------------------------------------
 local function sequence_count_notifier()
   
-  if debugvars.print_notifier_triggers then print("sequence count notifier triggered!!") end
+  if debugvars.print_notifier_trigger then print("sequence count notifier triggered!!") end
   
   seq_length.valid = false
   
@@ -520,10 +508,10 @@ local function get_sequence_length()
     --add our notifier to invalidate our recorded seq length if the sequence length changes
     song.sequencer.pattern_sequence_observable:add_notifier(sequence_count_notifier)
     
-    if debugvars.print_notifier_attachments then print("sequence count notifier attached!!") end
+    if debugvars.print_notifier_attach then print("sequence count notifier attached!!") end
   end
   
-  return(seq_length.length)
+  return seq_length.length
 end
 
 --IS STORABLE-----------------------------------------
@@ -742,11 +730,10 @@ setclock(2)
   
   --decide which offset value to use (typed or sliders)
   local offset_to_use
-  if offset_was_typed then offset_to_use = typed_offset
-  else offset_to_use = offset * offset_multiplier end
+  if offset_was_typed then offset_to_use = typed_offset / total_line_range
+  else offset_to_use = (offset / total_line_range) * offset_multiplier end  
   
-  
-  --set our anchor for where "x0.0" would end up when resizing, 0 - 1 in our selection range
+  --decide which anchor to use (where "x0.0000" would be), 0 - 1 in our selection range
   local anchor_to_use
   if anchor_type == 1 then
     if anchor == 0 then anchor_to_use = earliest_placement  
@@ -756,7 +743,7 @@ setclock(2)
     else anchor_to_use = 1 end
   end
   
-  
+  --decide which placement values to use
   local placement
   if resize_flags.redistribute then --if redistribution flag is set, we use the redistributed places
     if anchor_type == 1 then
@@ -820,14 +807,16 @@ addclock(6)
   
   --add note to our placed_notes table
   add_to_placed_notes(new_index,counter)
-
-
   
 end
 
 --UPDATE VALUEFIELDS---------------------------------
 local function update_valuefields()
 
+  print("update_valuefields() start")
+  
+  vb_notifiers_on = false
+  
   if time_was_typed then
     vb.views.time_text.value = typed_time
   else
@@ -837,18 +826,25 @@ local function update_valuefields()
   if offset_was_typed then
     vb.views.offset_text.value = typed_offset
   else
-    vb.views.offset_text.value = (offset * offset_multiplier) * (total_line_range)
+    vb.views.offset_text.value = offset * offset_multiplier
   end
   
+  vb_notifiers_on = true
+  
+  print("update_valuefields() end")
+  
+  return true
 end
 
 --APPLY RESIZE------------------------------------------
 local function apply_resize()
+
+  print("apply_resize()")
   
   if not valid_selection then
     app:show_error("There is no valid selection to operate on!")
     deactivate_controls()
-    return(false)
+    return false
   end
   
   table.clear(columns_overflowed_into)
@@ -926,7 +922,7 @@ local function apply_resize_notifier()
   
   tool.app_idle_observable:remove_notifier(apply_resize_notifier)
   
-  if debugvars.print_notifier_triggers then print("idle notifier triggered!") end
+  if debugvars.print_notifier_trigger then print("idle notifier triggered!") end
 end
 
 --ADD RESIZE IDLE NOTIFIER--------------------------------------
@@ -936,7 +932,7 @@ local function add_resize_idle_notifier()
   if not tool.app_idle_observable:has_notifier(apply_resize_notifier) then
     tool.app_idle_observable:add_notifier(apply_resize_notifier)
   
-    if debugvars.print_notifier_attachments then print("idle notifier attached!") end
+    if debugvars.print_notifier_attach then print("idle notifier attached!") end
   end
 
 end
@@ -945,11 +941,11 @@ end
 --REPOSITION CONTROLS----------------------------------------------
 local function reposition_controls()
 
-  vb_data.notifiers_active = false
+  vb_notifiers_on = false
   
   vb.views.time_slider.value = -vb.views.time_slider.value
   
-  vb_data.notifiers_active = true
+  vb_notifiers_on = true
 
 end
 
@@ -957,238 +953,305 @@ end
 local function show_window()
 
   --prepare the window content if it hasn't been done yet
-  if not vb_data.window_content then    
-    vb_data.window_content = vb:column {
-      width = 160,
+  if not vb_data.window_content then  
+    
+    --set our default sizes/margins and such
+    local sliders_width = 22
+    local sliders_height = 110
+    local multipliers_size = 24
+    local default_margin = 2
+    
+    vb_data.window_content = vb:column {  --our entire view will be in one big column
+      id = "window_content",
+      width = 144,  --set the window's width
       
-      vb:horizontal_aligner {
-        mode = "center",
-        width = 160,
+      vb:horizontal_aligner { --aligns time/offset control groups to window width
+        mode = "distribute",
+        margin = default_margin,
       
-        vb:vertical_aligner {
-          mode = "center",
-          width = 32,
+        vb:column { --contains all time-related controls
+          style = "panel",
+          margin = default_margin,
           
-          vb:valuefield {
-            id = "time_text",
-            align = "center",
-            min = -999,
-            max = 999,
-            value = 1,
+          vb:horizontal_aligner { --aligns icon in column
+            mode = "center",
             
-            --tonumber converts any typed-in user input to a number value 
-            --(called only if value was typed)
-            tonumber = function(str)
-              local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
-              val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
-              if val and -999 <= val and val <= 999 then --if val is a number, and within min/max
-                if debugvars.print_valuefield then print("tonumber = " .. val) end
-                typed_time = val
-                time_was_typed = true                     
-                apply_resize()
-              end
-              return val
-            end,
-            
-            --tostring is called when field is clicked, 
-            --after tonumber is called,
-            --and after the notifier is called
-            --it converts the value to a formatted string to be displayed
-            tostring = function(value)
-              if debugvars.print_valuefield then print(("tostring = x%.4f"):format(value)) end
-              return ("x%.4f"):format(value)
-            end,        
-            
-            --notifier is called whenever the value is changed
-            notifier = function(value)
-            if debugvars.print_valuefield then print("notifier") end
-            end
+            vb:bitmap { --icon at top of time controls
+              bitmap = "Bitmaps/clock.bmp",
+              mode = "body_color"
+            }
           },
           
-          vb:minislider {    
-            id = "time_slider", 
-            tooltip = "Time", 
-            min = -1, 
-            max = 1, 
-            value = time, 
-            width = vb_data.sliders_width, 
-            height = vb_data.sliders_height, 
-            notifier = function(value)
-              if anchor == 0 then
-                time = -value
-              else
-                time = value
+          vb:horizontal_aligner { --aligns time valuefield in column
+            mode = "center",
+            
+            vb:valuefield {
+              id = "time_text",
+              tooltip = "Type exact time multiplication values here!",
+              align = "center",
+              min = -256,
+              max = 256,
+              value = 1,
+              
+              --tonumber converts any typed-in user input to a number value 
+              --(called only if value was typed)
+              tonumber = function(str)
+                local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
+                val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
+                if val and -256 <= val and val <= 256 then --if val is a number, and within min/max
+                  if debugvars.print_valuefield then print("time tonumber = " .. val) end
+                  typed_time = val
+                  time_was_typed = true                     
+                  apply_resize()
+                end
+                return val
+              end,
+              
+              --tostring is called when field is clicked, 
+              --after tonumber is called,
+              --and after the notifier is called
+              --it converts the value to a formatted string to be displayed
+              tostring = function(value)
+                if debugvars.print_valuefield then print(("time tostring = x%.3f"):format(value)) end
+                return ("x%.3f"):format(value)
+              end,        
+              
+              --notifier is called whenever the value is changed
+              notifier = function(value)
+              if debugvars.print_valuefield then print("time_text notifier") end
               end
-              if vb_data.notifiers_active then
-                time_was_typed = false
-                apply_resize() 
-              end
-            end    
+            }
+          },
+          
+          vb:horizontal_aligner { --aligns time slider in column
+            mode = "center",
+                        
+            vb:minislider {    
+              id = "time_slider", 
+              tooltip = "Time", 
+              min = -1, 
+              max = 1, 
+              value = time, 
+              width = sliders_width, 
+              height = sliders_height, 
+              notifier = function(value)
+              if vb_notifiers_on then
+                  if anchor == 0 then
+                    time = -value
+                  else
+                    time = value
+                  end              
+                  time_was_typed = false
+                  apply_resize() 
+                end
+              end    
+            }
+          },
+            
+          vb:horizontal_aligner { --aligns time rotary in column
+            mode = "center",
+          
+            vb:rotary { 
+              id = "time_multiplier_rotary", 
+              tooltip = "Time Slider Range Extension", 
+              min = 1, 
+              max = 63, 
+              value = time_multiplier, 
+              width = multipliers_size, 
+              height = multipliers_size, 
+              notifier = function(value)              
+                if vb_notifiers_on then
+                  time_multiplier = value
+                  time_was_typed = false
+                  apply_resize()
+                end
+              end 
+            } --close rotary            
+          } --close rotary aligner
+        }, --close time controls column
+      
+    
+        vb:column { --contains all offset-related controls
+          style = "panel",
+          margin = default_margin,
+        
+          vb:horizontal_aligner { --aligns icon in column
+            mode = "center",
+            
+            vb:bitmap { --icon at top of offset controls
+              bitmap = "Bitmaps/arrows.bmp",
+              mode = "body_color"
+            }
           },
         
-          vb:rotary { 
-            id = "time_multiplier_rotary", 
-            tooltip = "Time Multiplier", 
-            min = 1, 
-            max = 64, 
-            value = time_multiplier, 
-            width = vb_data.multipliers_size, 
-            height = vb_data.multipliers_size, 
-            notifier = function(value) 
-              time_multiplier = value
-              if vb_data.notifiers_active then
-                time_was_typed = false
+          vb:horizontal_aligner { --aligns offset valuefield in column
+            mode = "center",
+            
+            vb:valuefield {
+              id = "offset_text",
+              tooltip = "Type exact line offset values here!",
+              align = "center",
+              min = -256,
+              max = 256,
+              value = 0,
+              
+              --tonumber converts any typed-in user input to a number value 
+              --(called only if value was typed)
+              tonumber = function(str)
+                local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
+                val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
+                if val and -256 <= val and val <= 256 then --if val is a number, and within min/max
+                  if debugvars.print_valuefield then print("offset tonumber = " .. val) end
+                  typed_offset = val
+                  offset_was_typed = true
+                  apply_resize()
+                end
+                return val
+              end,
+              
+              --tostring is called when field is clicked, 
+              --after tonumber is called,
+              --and after the notifier is called
+              --it converts the value to a formatted string to be displayed
+              tostring = function(value)
+                if debugvars.print_valuefield then print(("offset tostring = %.1f lines"):format(value)) end
+                return ("%.1f lines"):format(value)
+              end,        
+              
+              --notifier is called whenever the value is changed
+              notifier = function(value)
+              if debugvars.print_valuefield then print("offset_text notifier") end
+              end
+            }
+          },
+          
+          vb:horizontal_aligner { --aligns offset slider in column
+            mode = "center",
+          
+            vb:minislider {    
+              id = "offset_slider", 
+              tooltip = "Offset", 
+              min = -1, 
+              max = 1, 
+              value = 0, 
+              width = sliders_width, 
+              height = sliders_height, 
+              notifier = function(value)            
+                if vb_notifiers_on then
+                  offset_was_typed = false
+                  offset = -value
+                  apply_resize()
+                end
+              end    
+            }
+          },
+          
+          vb:horizontal_aligner { --aligns offset rotary in column
+            mode = "center",
+          
+            vb:rotary { 
+              id = "offset_multiplier_rotary", 
+              tooltip = "Offset Slider Range Extension", 
+              min = 1, 
+              max = 63, 
+              value = 1, 
+              width = multipliers_size, 
+              height = multipliers_size, 
+              notifier = function(value)              
+                if vb_notifiers_on then
+                  offset_was_typed = false
+                  offset_multiplier = value
+                  apply_resize()
+                end
+              end 
+            } --close rotary
+          } --close rotary aligner
+        } --close offset column
+      },  --close time/offset aligner
+      
+      vb:horizontal_aligner { --aligns checkboxes and switches to window size
+        mode = "justify",
+        margin = default_margin,
+      
+        vb:column { --column containing our checkboxes
+          style = "group",
+        
+          vb:checkbox { 
+            id = "overflow_flag_checkbox", 
+            tooltip = "Overflow Mode",
+            value = resize_flags.overflow, 
+            notifier = function(value)
+              if vb_notifiers_on then
+                resize_flags.overflow = value
                 apply_resize()
               end
             end 
-          }        
-        },
-        
-        vb:vertical_aligner {
-          mode = "center",
-          width = 32,
-          
-          vb:valuefield {
-            id = "offset_text",
-            align = "center",
-            min = -999,
-            max = 999,
-            value = 0,
-            
-            --tonumber converts any typed-in user input to a number value 
-            --(called only if value was typed)
-            tonumber = function(str)
-              local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
-              val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
-              if val and -999 <= val and val <= 999 then --if val is a number, and within min/max
-                if debugvars.print_valuefield then print("tonumber = " .. val) end
-                typed_offset = val / (total_line_range)
-                offset_was_typed = true
-                apply_resize()
-              end
-              return val
-            end,
-            
-            --tostring is called when field is clicked, 
-            --after tonumber is called,
-            --and after the notifier is called
-            --it converts the value to a formatted string to be displayed
-            tostring = function(value)
-              if debugvars.print_valuefield then print(("tostring = %.1f lines"):format(value)) end
-              return ("%.1f lines"):format(value)
-            end,        
-            
-            --notifier is called whenever the value is changed
-            notifier = function(value)
-            if debugvars.print_valuefield then print("notifier") end
-            end
           },
           
-          vb:minislider {    
-            id = "offset_slider", 
-            tooltip = "Offset", 
-            min = -1, 
-            max = 1, 
-            value = 0, 
-            width = vb_data.sliders_width, 
-            height = vb_data.sliders_height, 
-            notifier = function(value)            
-              if vb_data.notifiers_active then
-                offset_was_typed = false
-                offset = -(value / (total_line_range))
-                apply_resize()
-              end
-            end    
-          },
-          
-          vb:rotary { 
-            id = "offset_multiplier_rotary", 
-            tooltip = "Offset Multiplier", 
-            min = 1, 
-            max = 64, 
-            value = 1, 
-            width = vb_data.multipliers_size, 
-            height = vb_data.multipliers_size, 
+          vb:checkbox { 
+            id = "condense_flag_checkbox", 
+            tooltip = "Condense Mode",
+            value = resize_flags.condense, 
             notifier = function(value)
-              offset_was_typed = false
-              offset_multiplier = value
-              if vb_data.notifiers_active then
+              if vb_notifiers_on then
+                resize_flags.condense = value
                 apply_resize()
               end
             end 
-          }          
-        }
-      },               
-      
-      vb:vertical_aligner {
-        mode = "center",
-        width = 32,
+          },
+          
+          vb:checkbox { 
+            id = "redistribute_flag_checkbox", 
+            tooltip = "Redistribute Mode",
+            value = resize_flags.redistribute, 
+            notifier = function(value)
+              if vb_notifiers_on then
+                resize_flags.redistribute = value
+                apply_resize()
+              end
+            end 
+          }
+        },  --close checkbox column
         
-        vb:switch {
-          id = "anchor_switch",
-          width = 64,
-          value = 1,
-          items = {"Top", "End"},
-          notifier = function(value)
-            if vb_data.notifiers_active then
-              anchor = value - 1
-              reposition_controls()
-              apply_resize()
-            end
-          end
-        },
-        vb:switch {
-          id = "anchor_type_switch",
-          width = 64,
-          value = 1,
-          items = {"Note", "Select"},
-          notifier = function(value)
-            anchor_type = value
-            if vb_data.notifiers_active then
-              apply_resize()
-            end
-          end
-        }
-      },
-      
-      vb:checkbox { 
-        id = "overflow_flag_checkbox", 
-        tooltip = "Overflow Mode",
-        value = resize_flags.overflow, 
-        notifier = function(value) 
-          resize_flags.overflow = value
-          if vb_data.notifiers_active then
-            apply_resize()
-          end
-        end 
-      },
-      
-      vb:checkbox { 
-        id = "condense_flag_checkbox", 
-        tooltip = "Condense Mode",
-        value = resize_flags.condense, 
-        notifier = function(value) 
-          resize_flags.condense = value
-          if vb_data.notifiers_active then
-            apply_resize()
-          end
-        end 
-      },
-      
-      vb:checkbox { 
-        id = "redistribute_flag_checkbox", 
-        tooltip = "Redistribute Mode",
-        value = resize_flags.redistribute, 
-        notifier = function(value) 
-          resize_flags.redistribute = value
-          if vb_data.notifiers_active then
-            apply_resize()
-          end
-        end 
-      }   
-             
-    }
-  end
+        vb:vertical_aligner { --aligns our switches to the bottom of the window
+          mode = "bottom",
+          margin = default_margin,
+        
+          vb:column { --column containing our switches
+            style = "group",
+            margin = default_margin,
+          
+            vb:switch {
+              id = "anchor_switch",
+              width = 64,
+              value = 1,
+              items = {"Top", "End"},
+              notifier = function(value)
+                if vb_notifiers_on then
+                  anchor = value - 1
+                  reposition_controls()
+                  apply_resize()
+                end
+              end
+            },
+            
+            vb:switch {
+              id = "anchor_type_switch",
+              width = 64,
+              value = 1,
+              items = {"Note", "Select"},
+              notifier = function(value)
+                if vb_notifiers_on then
+                  anchor_type = value
+                  apply_resize()
+                end
+              end
+            }
+          } --close switches column
+        } --close switches vertical aligner  
+      } --close checkbox/switches horizontal aligner
+    } --close window_content column
+  end --end "if not window_content" statement
   
   --create/show the dialog window
   if not vb_data.window_obj or not vb_data.window_obj.visible then
@@ -1196,20 +1259,20 @@ local function show_window()
   else vb_data.window_obj:show()
   end  
   
-  return(true)
+  return true
 end
 
 --SELECTION-BASED STRUM-----------------------------------------------
 local function resize_selection()
       
   local result = reset_variables()
+  if result then result = add_document_notifiers() end
   if result then result = get_selection() end
   if result then result = find_selected_notes() end
   if result then result = calculate_note_placements() end
-  if result then result = add_document_notifiers() end
   if result then result = show_window() end
   if result then result = activate_controls() end
-  update_valuefields()
+  if result then result = update_valuefields() end
   if result then result = reset_view() end
 
 end
