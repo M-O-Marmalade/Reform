@@ -46,11 +46,8 @@ local tool = renoise.tool()
 local song = nil
 
 local vb = renoise.ViewBuilder() 
-local vb_data = {
-  window_obj = nil,
-  window_title = "Resize",
-  window_content = nil
-}
+local window_obj = nil
+local window_content = nil
 local vb_notifiers_on
 
 local selection
@@ -67,6 +64,7 @@ local total_line_range
 local earliest_placement
 local latest_placement
 local placed_notes = {}
+local start_pos = renoise.SongPos()
 
 local resize_flags = {
   overflow = true,
@@ -151,7 +149,7 @@ end
 --DEACTIVATE CONTROLS-------------------------------------
 local function deactivate_controls()
   
-  if vb_data.window_obj then
+  if window_obj then
     vb.views.time_text.active = false
     vb.views.time_slider.active = false
     vb.views.time_multiplier_rotary.active = false
@@ -170,7 +168,7 @@ end
 --ACTIVATE CONTROLS-------------------------------------
 local function activate_controls()
   
-  if vb_data.window_obj then
+  if window_obj then
     vb.views.time_text.active = true
     vb.views.time_slider.active = true
     vb.views.time_multiplier_rotary.active = true
@@ -273,6 +271,9 @@ local function store_note(s,p,t,c,l,counter)
       c = c, 
       l = l
     }
+    
+    --initialize our relative line position
+    selected_notes[counter].rel_line_pos = l
     
     --initialize empty data to replace its spot when it moves
     selected_notes[counter].last_overwritten_values = {
@@ -767,6 +768,9 @@ setclock(2)
   local line_difference = math.floor(delay_difference / 256)
   local new_line = selection.start_line + line_difference
   
+  --update this note's rel_line_pos
+  selected_notes[counter].rel_line_pos = selection.start_line + line_difference
+  
 addclock(2)
 setclock(3)
   
@@ -832,6 +836,23 @@ local function update_valuefields()
   vb_notifiers_on = true
   
   print("update_valuefields() end")
+  
+  return true
+end
+
+--UPDATE START POS----------------------------
+local function update_start_pos()
+
+  local earliest_note = {number = 0, line = math.huge}
+  for k in ipairs(selected_notes) do
+    if selected_notes[k].rel_line_pos < earliest_note.line then
+      earliest_note.number = k 
+      earliest_note.line = selected_notes[k].rel_line_pos
+    end
+  end
+
+  start_pos.sequence = selected_notes[earliest_note.number].current_location.s
+  start_pos.line = selected_notes[earliest_note.number].current_location.l
   
   return true
 end
@@ -908,6 +929,8 @@ readclock(1,"place_new_note total clock: ")
   --update our multiplier text
   update_valuefields()
   
+  update_start_pos()
+  
 end
 
 
@@ -949,11 +972,23 @@ local function reposition_controls()
 
 end
 
+--SPACE KEY-----------------------------------
+local function space_key()
+
+  if not song.transport.playing then
+    song.transport:start_at(start_pos) 
+  else
+    song.transport:stop()
+  end
+  
+  return true
+end
+
 --SHOW WINDOW---------------------------------------------------- 
 local function show_window()
 
   --prepare the window content if it hasn't been done yet
-  if not vb_data.window_content then  
+  if not window_content then  
     
     --set our default sizes/margins and such
     local sliders_width = 22
@@ -961,7 +996,7 @@ local function show_window()
     local multipliers_size = 24
     local default_margin = 2
     
-    vb_data.window_content = vb:column {  --our entire view will be in one big column
+    window_content = vb:column {  --our entire view will be in one big column
       id = "window_content",
       width = 144,  --set the window's width
       
@@ -1243,6 +1278,7 @@ local function show_window()
               notifier = function(value)
                 if vb_notifiers_on then
                   anchor_type = value
+                  update_start_pos()
                   apply_resize()
                 end
               end
@@ -1253,11 +1289,91 @@ local function show_window()
     } --close window_content column
   end --end "if not window_content" statement
   
-  --create/show the dialog window
-  if not vb_data.window_obj or not vb_data.window_obj.visible then
-    vb_data.window_obj = app:show_custom_dialog(vb_data.window_title, vb_data.window_content)
-  else vb_data.window_obj:show()
-  end  
+  --key handler function
+  local function key_handler(dialog,key)
+  
+    if key.state == "pressed" then
+      
+      if not key.repeated then
+      
+        if key.modifiers == "" then
+        
+          if key.name == "space" then space_key() end
+          
+        elseif key.modifiers == "shift" then
+        
+        elseif key.modifiers == "alt" then
+        
+        elseif key.modifiers == "control" then
+        
+          if key.name == "space" then space_key() end
+        
+        elseif key.modifiers == "shift + alt" then
+        
+        elseif key.modifiers == "shift + control" then
+        
+        elseif key.modifiers == "alt + control" then
+        
+        elseif key.modifiers == "shift + alt + control" then
+        
+        end
+      
+      elseif key.repeated then
+      
+        if key.modifiers == "" then
+        
+        elseif key.modifiers == "shift" then
+        
+        elseif key.modifiers == "alt" then
+        
+        elseif key.modifiers == "control" then
+        
+        elseif key.modifiers == "shift + alt" then
+        
+        elseif key.modifiers == "shift + control" then
+        
+        elseif key.modifiers == "alt + control" then
+        
+        elseif key.modifiers == "shift + alt + control" then
+        
+        end
+      
+      end --end if key.repeated
+      
+    elseif key.state == "released" then
+    
+      if key.modifiers == "" then
+      
+      elseif key.modifiers == "shift" then
+      
+      elseif key.modifiers == "alt" then
+      
+      elseif key.modifiers == "control" then
+      
+      elseif key.modifiers == "shift + alt" then
+      
+      elseif key.modifiers == "shift + control" then
+      
+      elseif key.modifiers == "alt + control" then
+      
+      elseif key.modifiers == "shift + alt + control" then
+      
+      end
+      
+    end --end if key.state == "pressed"/"released"
+    
+  end --end key_handler()
+  
+  --key handler options
+  local key_handler_options = {
+    send_key_repeat = true,
+    send_key_release = true
+  }
+  
+  --create the dialog if it show the dialog window
+  if not window_obj or not window_obj.visible then
+    window_obj = app:show_custom_dialog("Resize", window_content, key_handler, key_handler_options)
+  else window_obj:show() end
   
   return true
 end
@@ -1270,6 +1386,7 @@ local function resize_selection()
   if result then result = get_selection() end
   if result then result = find_selected_notes() end
   if result then result = calculate_note_placements() end
+  if result then result = update_start_pos() end
   if result then result = show_window() end
   if result then result = activate_controls() end
   if result then result = update_valuefields() end
