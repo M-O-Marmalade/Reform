@@ -130,9 +130,11 @@ end
 local function reset_view()
 
   vb_notifiers_on = false
-
+  
+  vb.views.time_text.value = time
   vb.views.time_slider.value = time
   vb.views.time_multiplier_rotary.value = time_multiplier
+  vb.views.offset_text.value = offset
   vb.views.offset_slider.value = offset
   vb.views.offset_multiplier_rotary.value = offset_multiplier
   vb.views.overflow_flag_checkbox.value = resize_flags.overflow
@@ -160,6 +162,8 @@ local function deactivate_controls()
     vb.views.overflow_flag_checkbox.active = false
     vb.views.condense_flag_checkbox.active = false
     vb.views.redistribute_flag_checkbox.active = false
+    vb.views.anchor_switch.active = false
+    vb.views.anchor_type_switch.active = false
   end
 
   return true
@@ -178,6 +182,8 @@ local function activate_controls()
     vb.views.overflow_flag_checkbox.active = true
     vb.views.condense_flag_checkbox.active = true
     vb.views.redistribute_flag_checkbox.active = true
+    vb.views.anchor_switch.active = true
+    vb.views.anchor_type_switch.active = true
   end
 
   return true
@@ -265,10 +271,10 @@ local function store_note(s,p,t,c,l,counter)
     
     --initialize the location of the note
     selected_notes[counter].current_location = {
-      s = s, 
-      p = p, 
-      t = t, 
-      c = c, 
+      s = s,
+      p = p,
+      t = t,
+      c = c,
       l = l
     }
     
@@ -307,14 +313,11 @@ local function get_selection()
   
   --if there is no selection box, then we show an error, and disallow further operations
   if not selection then
-    app:show_error("no selection has been made")
+    app:show_error("No selection has been made")
     valid_selection = false
     deactivate_controls()
     return false
   end
-  
-  --if there was a selection box, we will set valid_selection to true, and continue
-  valid_selection = true
 
   return true
 end
@@ -371,6 +374,17 @@ local function find_selected_notes()
     end
     
   end
+  
+  --if no content was found in the selection, then we should not continue operations
+  if counter == 1 then
+    valid_selection = false
+    deactivate_controls()
+    app:show_error("The selection is empty!")
+    return false
+  end
+  
+  --if there was content in the selection, we will set valid_selection to true, and continue
+  valid_selection = true
     
   return true
 end
