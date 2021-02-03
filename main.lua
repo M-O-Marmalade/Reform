@@ -10,7 +10,7 @@ local debugvars = {
   print_notifier_attach = false,
   print_notifier_trigger = false,
   print_restorations = false, --prints restorations of existing notes to terminal when set true
-  print_valuefield = true, --prints info from valuefields when set true
+  print_valuefield = false, --prints info from valuefields when set true
   clocks = false, --prints out profiling clocks in different parts of the code when set true
   clocktotals = {},
   tempclocks = {}
@@ -74,6 +74,9 @@ local resize_flags = {
 
 local pattern_lengths = {} --an array of []{length, valid, notifier}
 local seq_length = { length = 0, valid = false }
+local visible_note_columns = {}
+local visible_effect_columns = {}
+local track_count = {}
 
 local time = 0
 local time_multiplier = 1
@@ -529,50 +532,243 @@ local function get_sequence_length()
   return seq_length.length
 end
 
---IS STORABLE-----------------------------------------
-local function is_storable(index,counter)
-
-  if not placed_notes[index.p] then return true end
-  if not placed_notes[index.p][index.t] then return true end
-  if not placed_notes[index.p][index.t][index.l] then return true end
-  if not placed_notes[index.p][index.t][index.l][index.c] then return true--return true if no notes were found to be storing data at this spot
-  else return false end --return false if we found one of our notes already in this spot
+--TRACK COUNT NOTIFIER---------------------------------------------------
+local function track_count_notifier()
+  
+  if debugvars.print_notifier_trigger then print("track count notifier triggered!!") end
+  
+  track_count.valid = false
+  
+  song.tracks_observable:remove_notifier(track_count_notifier)
   
 end
 
---FIND CORRECT INDEX---------------------------------------
-local function find_correct_index(original_index, new_line)
-  
-  --shorten variables
-  local s,p,t,c,l = original_index.s, original_index.p, original_index.t, original_index.c, new_line
-  
-  --find the correct sequence if our line index lies before or after the bounds of this pattern
-  if l < 1 then  
-    while l < 1 do
+--GET TRACK COUNT-------------------------------------
+local function get_track_count()
+
+  if not track_count.valid then
+    track_count.count = #song.tracks
+    track_count.valid = true
     
-      --decrement the sequence index (with wrap-around)
-      s = (s - 1) % get_sequence_length()
-      if s == 0 then s = get_sequence_length() end
-        
-      --update our line index
-      l = l + get_pattern_length_at_seq(s)
-        
-    end  
-  elseif l > get_pattern_length_at_seq(s) then
-    while true do
-      
-      --update our line index
-      l = l - get_pattern_length_at_seq(s)
-      
-      --increment the sequence index (with wrap-around)
-      s = (s + 1) % get_sequence_length()
-      if s == 0 then s = get_sequence_length() end
-            
-      --break the loop if we find a valid line index
-      if l <= get_pattern_length_at_seq(s) then break end
-            
-    end      
+    --add our notifier to invalidate our recorded track count if the amount of tracks changes
+    song.tracks_observable:add_notifier(track_count_notifier)
+    
+    if debugvars.print_notifier_attach then print("track count notifier attached!!") end
   end
+  
+  return track_count.count
+end
+
+--ADD VISIBLE NOTE COLUMNS NOTIFIER-----------------------------------
+local function add_visible_note_columns_notifier(t)
+
+  --define the notifier function
+  local function visible_note_columns_notifier()
+    
+    if debugvars.print_notifier_trigger then
+      print(("track %i's visible note columns notifier triggered!!"):format(t))
+    end
+    
+    visible_note_columns[t].valid = false
+    
+    --remove it from our record of which notifiers we currently have attached
+    visible_note_columns[t].notifier = false
+  
+    song:track(t).visible_note_columns_observable:remove_notifier(visible_note_columns_notifier)
+    
+  end
+  
+  --then add it to the track in question
+  song:track(t).visible_note_columns_observable:add_notifier(visible_note_columns_notifier)
+  
+  --add it to our record of which notifiers we currently have attached
+  visible_note_columns[t].notifier = true
+
+end
+
+--GET VISIBLE NOTE COLUMNS-----------------------------------------
+local function get_visible_note_columns(t)
+  
+  --create an entry for this pattern if there is none yet
+  if not visible_note_columns[t] then  
+    visible_note_columns[t] = {}
+  end
+  
+  --update our records of this pattern's length if we don't have the valid data for it
+  if not visible_note_columns[t].valid then
+    visible_note_columns[t].amount = song:track(t).visible_note_columns
+    visible_note_columns[t].valid = true  
+    
+    --add our notifier to invalidate our record if anything changes
+    add_visible_note_columns_notifier(t)
+    
+    if debugvars.print_notifier_attach then
+      print(("track %i's visible note columns notifier attached!!"):format(t))
+    end
+  end
+  
+  return visible_note_columns[t].amount
+end
+
+--ADD VISIBLE EFFECT COLUMNS NOTIFIER-----------------------------------
+local function add_visible_effect_columns_notifier(t)
+
+  --define the notifier function
+  local function visible_effect_columns_notifier()
+    
+    if debugvars.print_notifier_trigger then
+      print(("track %i's visible effect columns notifier triggered!!"):format(t))
+    end
+    
+    visible_effect_columns[t].valid = false
+    
+    --remove it from our record of which notifiers we currently have attached
+    visible_effect_columns[t].notifier = false
+  
+    song:track(t).visible_effect_columns_observable:remove_notifier(visible_effect_columns_notifier)
+    
+  end
+  
+  --then add it to the track in question
+  song:track(t).visible_effect_columns_observable:add_notifier(visible_effect_columns_notifier)
+  
+  --add it to our record of which notifiers we currently have attached
+  visible_effect_columns[t].notifier = true
+
+end
+
+--GET VISIBLE EFFECT COLUMNS-----------------------------------------
+local function get_visible_effect_columns(t)
+  
+  --create an entry for this pattern if there is none yet
+  if not visible_effect_columns[t] then  
+    visible_effect_columns[t] = {}
+  end
+  
+  --update our records of this pattern's length if we don't have the valid data for it
+  if not visible_effect_columns[t].valid then
+    visible_effect_columns[t].amount = song:track(t).visible_effect_columns
+    visible_effect_columns[t].valid = true  
+    
+    --add our notifier to invalidate our record if anything changes
+    add_visible_effect_columns_notifier(t)
+    
+    if debugvars.print_notifier_attach then
+      print(("track %i's visible effect columns notifier attached!!"):format(t))
+    end
+  end
+  
+  return visible_effect_columns[t].amount
+end
+
+--GET INDEX-----------------------------------
+local function get_index(s,t,l,c)
+
+  local nc,ec = nil,nil
+  
+  --FIND SEQUENCE INDEX
+  if s then
+    s = s % get_sequence_length()
+    if s == 0 then s = get_sequence_length() end
+  end  
+  
+  --FIND TRACK INDEX
+  if t then
+    t = t % get_track_count()
+    if t == 0 then t = get_track_count() end
+  end
+  
+  --FIND COLUMN INDEX
+  if c then
+    --get the total amount of visible columns for this track
+    local vis_note_columns = get_visible_note_columns(t)
+    local vis_effect_columns = get_visible_effect_columns(t)
+    local total_vis_columns = vis_note_columns + vis_effect_columns
+    
+    if c > total_vis_columns then --if our desired column is outside of this track
+      while c > total_vis_columns do
+      
+        --subtract this track's amount of note+effect columns from our column index
+        c = c - total_vis_columns
+        
+        --increment the track index (with wrap-around)
+        t = (t + 1) % get_track_count()
+        if t == 0 then t = get_track_count() end
+      
+        --get the total amount of visible columns for this new track
+        vis_note_columns = get_visible_note_columns(t)
+        vis_effect_columns = get_visible_effect_columns(t)
+        total_vis_columns = vis_note_columns + vis_effect_columns
+      
+      end
+    elseif c < 1 then
+      while c < 1 do
+      
+        --decrement the track index (with wrap-around)
+        t = (t - 1) % get_track_count()
+        if t == 0 then t = get_track_count() end
+        
+        --get the total amount of visible columns for this new track
+        vis_note_columns = get_visible_note_columns(t)
+        vis_effect_columns = get_visible_effect_columns(t)
+        total_vis_columns = vis_note_columns + vis_effect_columns
+      
+        --add this track's amount of note+effect columns to our column index
+        c = c + total_vis_columns
+      
+      end
+    end
+    
+    --figure out if our column index is for a note column, or effect column, 
+    --the unused variable will stay as nil
+    if c > vis_note_columns then
+      ec = c - vis_note_columns
+    else
+      nc = c
+    end    
+  end
+  
+  
+  --FIND LINE INDEX
+  if l then
+    --find the correct sequence if our line index lies before or after the bounds of this pattern
+    if l < 1 then  
+      while l < 1 do
+      
+        --decrement the sequence index (with wrap-around)
+        s = (s - 1) % get_sequence_length()
+        if s == 0 then s = get_sequence_length() end
+          
+        --update our line index
+        l = l + get_pattern_length_at_seq(s)
+          
+      end  
+    elseif l > get_pattern_length_at_seq(s) then
+      while true do
+        
+        --update our line index
+        l = l - get_pattern_length_at_seq(s)
+        
+        --increment the sequence index (with wrap-around)
+        s = (s + 1) % get_sequence_length()
+        if s == 0 then s = get_sequence_length() end
+              
+        --break the loop if we find a valid line index
+        if l <= get_pattern_length_at_seq(s) then break end
+              
+      end
+    end
+  end
+  
+  return s,t,l,nc,ec
+end
+
+--FIND CORRECT INDEX---------------------------------------
+local function find_correct_index(s,p,t,l,c)
+    
+  --find the correct sequence if our line index lies before or after the bounds of this pattern
+  local _
+  s,_,l = get_index(s,nil,l,nil)
   
   --get the new pattern index based on our new sequence index
   p = song.sequencer:pattern(s)
@@ -600,15 +796,7 @@ local function find_correct_index(original_index, new_line)
     end
   end
   
-  
-  
-  --return the note column we need
-  local column = song:pattern(p):track(t):line(l):note_column(c)
-  
-  --return the new p,t,c,l values as well
-  local new_index = {s = s, p = p, t = t, c = c, l = l}
-  
-  return column, new_index
+  return {s = s, p = p, t = t, c = c, l = l}
 end
 
 --SET TRACK VISIBILITY------------------------------------------
@@ -673,6 +861,17 @@ local function restore_old_note(counter)
   set_note_column_values( column_to_restore, stored_note_values)
   
   return true
+end
+
+--IS STORABLE-----------------------------------------
+local function is_storable(index,counter)
+
+  if not placed_notes[index.p] then return true end
+  if not placed_notes[index.p][index.t] then return true end
+  if not placed_notes[index.p][index.t][index.l] then return true end
+  if not placed_notes[index.p][index.t][index.l][index.c] then return true--return true if no notes were found to be storing data at this spot
+  else return false end --return false if we found one of our notes already in this spot
+  
 end
 
 --GET EXISTING NOTE----------------------------------------------
@@ -783,23 +982,31 @@ setclock(2)
   local new_line = selection.start_line + line_difference
   
   --update this note's rel_line_pos
-  selected_notes[counter].rel_line_pos = selection.start_line + line_difference
+  selected_notes[counter].rel_line_pos = new_line
   
 addclock(2)
 setclock(3)
   
-  local column, new_index = find_correct_index(selected_notes[counter].original_index, new_line)  
+  local index = find_correct_index(
+    selected_notes[counter].original_index.s,
+    selected_notes[counter].original_index.p,
+    selected_notes[counter].original_index.t,
+    new_line,
+    selected_notes[counter].original_index.c
+  )  
+  
+  local column = song:pattern(index.p):track(index.t):line(index.l):note_column(index.c)
   
 addclock(3)
 setclock(4)
   
   --store the note from the new spot we have moved to
-  get_existing_note(new_index, counter)
+  get_existing_note(index, counter)
 
 addclock(4)
 setclock(5)
   
-  update_current_note_location(counter, new_index)
+  update_current_note_location(counter, index)
 
 addclock(5)
   
@@ -824,14 +1031,14 @@ setclock(6)
 addclock(6)
   
   --add note to our placed_notes table
-  add_to_placed_notes(new_index,counter)
+  add_to_placed_notes(index,counter)
   
 end
 
 --UPDATE VALUEFIELDS---------------------------------
 local function update_valuefields()
 
-  print("update_valuefields() start")
+  --print("update_valuefields() start")
   
   vb_notifiers_on = false
   
@@ -849,7 +1056,7 @@ local function update_valuefields()
   
   vb_notifiers_on = true
   
-  print("update_valuefields() end")
+  --print("update_valuefields() end")
   
   return true
 end
@@ -874,7 +1081,7 @@ end
 --APPLY RESIZE------------------------------------------
 local function apply_resize()
 
-  print("apply_resize()")
+  --print("apply_resize()")
   
   if not valid_selection then
     app:show_error("There is no valid selection to operate on!")
@@ -996,6 +1203,110 @@ local function space_key()
   end
   
   return true
+end
+
+--SHIFT SPACE KEY-----------------------------------
+local function shift_space_key()
+
+  if not song.transport.playing then
+    song.transport:start_at(song.transport.edit_pos) 
+  else
+    song.transport:stop()
+  end
+
+  return true
+end
+
+--UP KEY--------------------------------------------
+local function up_key()
+  
+  local s,t,l = get_index(
+    song.selected_sequence_index,
+    1,
+    song.selected_line_index - 1,
+    1
+  )
+  
+  song.selected_sequence_index = s
+  song.selected_line_index = l
+
+end
+
+--DOWN KEY--------------------------------------------
+local function down_key()
+
+  local s,t,l = get_index(
+    song.selected_sequence_index,
+    1,
+    song.selected_line_index + 1,
+    1
+  )
+  
+  song.selected_sequence_index = s
+  song.selected_line_index = l
+
+end
+
+--LEFT KEY--------------------------------------------
+local function left_key()
+
+  local track = song.selected_track_index
+
+  --find our current column index
+  local column
+  
+  --if we do not have an effect column selected, then we have a note column selected
+  if song.selected_effect_column_index == 0 then
+    column = song.selected_note_column_index
+  else
+    column = song.selected_effect_column_index + get_visible_note_columns(track)
+  end
+
+  local s,t,l,nc,ec = get_index(
+    song.selected_sequence_index,
+    track,
+    song.selected_line_index,
+    column - 1
+  )
+  
+  song.selected_sequence_index = s
+  song.selected_track_index = t
+  song.selected_line_index = l
+  
+  if nc then song.selected_note_column_index = nc
+  elseif ec then song.selected_effect_column_index = ec end
+
+end
+
+--RIGHT KEY--------------------------------------------
+local function right_key()
+
+  local track = song.selected_track_index
+  
+  --find our current column index
+  local column
+  
+  --if we do not have an effect column selected, then we have a note column selected
+  if song.selected_effect_column_index == 0 then
+    column = song.selected_note_column_index
+  else
+    column = song.selected_effect_column_index + get_visible_note_columns(track)
+  end
+
+  local s,t,l,nc,ec = get_index(
+    song.selected_sequence_index,
+    track,
+    song.selected_line_index,
+    column + 1
+  )
+  
+  song.selected_sequence_index = s
+  song.selected_track_index = t
+  song.selected_line_index = l
+  
+  if nc then song.selected_note_column_index = nc
+  elseif ec then song.selected_effect_column_index = ec end
+
 end
 
 --SHOW WINDOW---------------------------------------------------- 
@@ -1314,7 +1625,14 @@ local function show_window()
         
           if key.name == "space" then space_key() end
           
+          if key.name == "up" then up_key() end
+          if key.name == "down" then down_key() end
+          if key.name == "left" then left_key() end
+          if key.name == "right" then right_key() end
+          
         elseif key.modifiers == "shift" then
+        
+          if key.name == "space" then shift_space_key() end
         
         elseif key.modifiers == "alt" then
         
@@ -1335,6 +1653,11 @@ local function show_window()
       elseif key.repeated then
       
         if key.modifiers == "" then
+        
+          if key.name == "up" then up_key() end
+          if key.name == "down" then down_key() end
+          if key.name == "left" then left_key() end
+          if key.name == "right" then right_key() end
         
         elseif key.modifiers == "shift" then
         
@@ -1392,7 +1715,7 @@ local function show_window()
   return true
 end
 
---SELECTION-BASED STRUM-----------------------------------------------
+--RESIZE SELECTION-----------------------------------------------
 local function resize_selection()
       
   local result = reset_variables()
@@ -1408,11 +1731,20 @@ local function resize_selection()
 
 end
 
+--RESTORE RESIZE WINDOW----------------------------------------------------
+local function restore_resize_window()
+
+  if valid_selection then
+    show_window()
+  end
+
+end
+
 --MENU/HOTKEY ENTRIES-------------------------------------------------------------------------------- 
 
 renoise.tool():add_menu_entry { 
-  name = "Main Menu:Tools:Resize Selection...", 
-  invoke = function() resize_selection() end 
+  name = "Main Menu:Tools:Restore Resize Window...", 
+  invoke = function() restore_resize_window() end 
 }
 
 renoise.tool():add_menu_entry { 
