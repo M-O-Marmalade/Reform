@@ -117,7 +117,7 @@ local function reset_variables()
   anchor = 0
   anchor_type = 1
   
-  earliest_placement = 1
+  earliest_placement = math.huge
   latest_placement = 0
   
   resize_flags = {   
@@ -413,9 +413,9 @@ local function calculate_note_placements()
      
     local delay_difference = selected_notes[k].delay_value + (line_difference*256)
       
-    local note_place = delay_difference / total_delay_range
+    local note_place = delay_difference
     
-    --store the placement value for this note (a value from 0 - 1 in selection range)
+    --store the placement value for this note (a value from 0 - total_delay_range)
     selected_notes[k].placement = note_place
     
     --record the earliest and latest note placements in the selection
@@ -432,7 +432,7 @@ local function calculate_note_placements()
       0,
       total_line_range / (selection.end_line - selection.start_line + 1),
       0,
-      1)
+      total_delay_range)
   end
   
   --calculate redistributed placements in note range
@@ -444,8 +444,8 @@ local function calculate_note_placements()
       earliest_placement,
       latest_placement)
       
-      --if there is only one note, we need to set it to 0 here, or it will be left as nan
-      if amount_of_notes == 1 then selected_notes[k].redistributed_placement_in_note_range = 0 end
+      --if there is only one note, we need to set it here, or it will be left as nan
+      if amount_of_notes == 1 then selected_notes[k].redistributed_placement_in_note_range = earliest_placement end
   end
   
   return true
@@ -944,17 +944,17 @@ setclock(2)
   
   --decide which offset value to use (typed or sliders)
   local offset_to_use
-  if offset_was_typed then offset_to_use = typed_offset / total_line_range
-  else offset_to_use = (offset / total_line_range) * offset_multiplier end  
+  if offset_was_typed then offset_to_use = typed_offset * 256
+  else offset_to_use = (offset * 256) * offset_multiplier end  
   
-  --decide which anchor to use (where "x0.0000" would be), 0 - 1 in our selection range
+  --decide which anchor to use (where "x0.0000" would be)
   local anchor_to_use
   if anchor_type == 1 then
     if anchor == 0 then anchor_to_use = earliest_placement  
     else anchor_to_use = latest_placement end
   else
     if anchor == 0 then anchor_to_use = 0   
-    else anchor_to_use = 1 end
+    else anchor_to_use = total_delay_range end
   end
   
   --decide which placement values to use
@@ -976,7 +976,7 @@ setclock(2)
   placement = placement * time_to_use + offset_to_use
   
   --calculate the indexes where the new note will be, based on its new placement value
-  local delay_difference = placement * total_delay_range + anchor_to_use * total_delay_range
+  local delay_difference = placement + anchor_to_use
   local new_delay_value = (delay_difference % 256)
   local line_difference = math.floor(delay_difference / 256)
   local new_line = selection.start_line + line_difference
