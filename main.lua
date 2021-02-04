@@ -1,4 +1,4 @@
---Resize - main.lua--
+--Reform - main.lua--
 --DEBUG CONTROLS-------------------------------
 local debugmode = false 
 
@@ -51,7 +51,7 @@ local window_content = nil
 local vb_notifiers_on
 
 local previous_time = 0
-local idle_processing = false --if apply_resize() takes longer than 40ms, this becomes true
+local idle_processing = false --if apply_reform() takes longer than 40ms, this becomes true
 
 local selection
 local valid_selection
@@ -69,7 +69,7 @@ local latest_placement
 local placed_notes = {}
 local start_pos = renoise.SongPos()
 
-local resize_flags = {
+local reform_flags = {
   overflow = true,
   condense = false,
   redistribute = false
@@ -123,7 +123,7 @@ local function reset_variables()
   earliest_placement = math.huge
   latest_placement = 0
   
-  resize_flags = {   
+  reform_flags = {   
     overflow = true,
     condense = false,
     redistribute = false
@@ -143,9 +143,9 @@ local function reset_view()
   vb.views.offset_text.value = offset
   vb.views.offset_slider.value = offset
   vb.views.offset_multiplier_rotary.value = offset_multiplier
-  vb.views.overflow_flag_checkbox.value = resize_flags.overflow
-  vb.views.condense_flag_checkbox.value = resize_flags.condense
-  vb.views.redistribute_flag_checkbox.value = resize_flags.redistribute
+  vb.views.overflow_flag_checkbox.value = reform_flags.overflow
+  vb.views.condense_flag_checkbox.value = reform_flags.condense
+  vb.views.redistribute_flag_checkbox.value = reform_flags.redistribute
   vb.views.anchor_switch.value = anchor + 1
   vb.views.anchor_type_switch.value = anchor_type
   
@@ -359,7 +359,7 @@ local function find_selected_notes()
   local counter = 1
   table.clear(is_note_track)
   
-  --scan through lines, tracks, and columns and store all notes to be resized
+  --scan through lines, tracks, and columns and store all notes to be reformed
   for l = selection.start_line, selection.end_line do 
      
     --work on first track
@@ -790,7 +790,7 @@ local function find_correct_index(s,p,t,l,c)
   p = song.sequencer:pattern(s)
   
   --if overflow is on, then push notes out to empty columns when available
-  if resize_flags.overflow then
+  if reform_flags.overflow then
     while true do
       if c == 12 then break
       elseif song:pattern(p):track(t):line(l):note_column(c).is_empty then break
@@ -804,7 +804,7 @@ local function find_correct_index(s,p,t,l,c)
   
   
   --if condense is on, then pull notes in to empty columns when available
-  if resize_flags.condense then
+  if reform_flags.condense then
     while true do
       if c == 1 then break
       elseif not song:pattern(p):track(t):line(l):note_column(c-1).is_empty then break
@@ -975,7 +975,7 @@ setclock(2)
   
   --decide which placement values to use
   local placement
-  if resize_flags.redistribute then --if redistribution flag is set, we use the redistributed places
+  if reform_flags.redistribute then --if redistribution flag is set, we use the redistributed places
     if anchor_type == 1 then
       placement = selected_notes[counter].redistributed_placement_in_note_range
     else
@@ -1094,8 +1094,8 @@ local function update_start_pos()
   return true
 end
 
---APPLY RESIZE------------------------------------------
-local function apply_resize()
+--APPLY REFORM------------------------------------------
+local function apply_reform()
 
 resetclock(0)
 setclock(0)
@@ -1103,7 +1103,7 @@ setclock(0)
   --set the clock we will use to determine if idle processing will be necessary next time
   previous_time = os.clock()
 
-  --print("apply_resize()")
+  --print("apply_reform()")
   
   if not valid_selection then
     app:show_error("There is no valid selection to operate on!")
@@ -1177,27 +1177,27 @@ addclock(1)
   previous_time = os.clock() - previous_time
   
 addclock(0)
-readclock(0,"apply_resize() total clock: ")
+readclock(0,"apply_reform() total clock: ")
   
 end
 
---if performance becomes a problem, we use add_resize_idle_notifier() instead of apply_resize()
---APPLY RESIZE NOTIFIER----------------------------------
-local function apply_resize_notifier()
+--if performance becomes a problem, we use add_reform_idle_notifier() instead of apply_reform()
+--APPLY REFORM NOTIFIER----------------------------------
+local function apply_reform_notifier()
     
-  apply_resize()
+  apply_reform()
   
-  tool.app_idle_observable:remove_notifier(apply_resize_notifier)
+  tool.app_idle_observable:remove_notifier(apply_reform_notifier)
   
   if debugvars.print_notifier_trigger then print("idle notifier triggered!") end
 end
 
---ADD RESIZE IDLE NOTIFIER--------------------------------------
-local function add_resize_idle_notifier()
+--ADD REFORM IDLE NOTIFIER--------------------------------------
+local function add_reform_idle_notifier()
   
   
-  if not tool.app_idle_observable:has_notifier(apply_resize_notifier) then
-    tool.app_idle_observable:add_notifier(apply_resize_notifier)
+  if not tool.app_idle_observable:has_notifier(apply_reform_notifier) then
+    tool.app_idle_observable:add_notifier(apply_reform_notifier)
   
     if debugvars.print_notifier_attach then print("idle notifier attached!") end
   end
@@ -1208,12 +1208,12 @@ end
 local function queue_processing()
 
   if not idle_processing then
-    apply_resize()
+    apply_reform()
   else
-    add_resize_idle_notifier()
+    add_reform_idle_notifier()
   end
   
-  --if apply_resize() took longer than 40ms, we will move processing to idle notifier next time
+  --if apply_reform() took longer than 40ms, we will move processing to idle notifier next time
   if previous_time < 0.04 then
     idle_processing = false
   else
@@ -1615,10 +1615,10 @@ local function show_window()
           vb:checkbox { 
             id = "overflow_flag_checkbox", 
             tooltip = "Overflow Mode",
-            value = resize_flags.overflow, 
+            value = reform_flags.overflow, 
             notifier = function(value)
               if vb_notifiers_on then
-                resize_flags.overflow = value
+                reform_flags.overflow = value
                 queue_processing()
               end
             end 
@@ -1627,10 +1627,10 @@ local function show_window()
           vb:checkbox { 
             id = "condense_flag_checkbox", 
             tooltip = "Condense Mode",
-            value = resize_flags.condense, 
+            value = reform_flags.condense, 
             notifier = function(value)
               if vb_notifiers_on then
-                resize_flags.condense = value
+                reform_flags.condense = value
                 queue_processing()
               end
             end 
@@ -1639,10 +1639,10 @@ local function show_window()
           vb:checkbox { 
             id = "redistribute_flag_checkbox", 
             tooltip = "Redistribute Mode",
-            value = resize_flags.redistribute, 
+            value = reform_flags.redistribute, 
             notifier = function(value)
               if vb_notifiers_on then
-                resize_flags.redistribute = value
+                reform_flags.redistribute = value
                 queue_processing()
               end
             end 
@@ -1790,14 +1790,14 @@ local function show_window()
   
   --create the dialog if it show the dialog window
   if not window_obj or not window_obj.visible then
-    window_obj = app:show_custom_dialog("Resize", window_content, key_handler, key_handler_options)
+    window_obj = app:show_custom_dialog("Reform", window_content, key_handler, key_handler_options)
   else window_obj:show() end
   
   return true
 end
 
---RESIZE SELECTION-----------------------------------------------
-local function resize_selection()
+--REFORM SELECTION-----------------------------------------------
+local function reform_selection()
       
   local result = reset_variables()
   if result then result = add_document_notifiers() end
@@ -1812,8 +1812,8 @@ local function resize_selection()
 
 end
 
---RESTORE RESIZE WINDOW----------------------------------------------------
-local function restore_resize_window()
+--RESTORE REFORM WINDOW----------------------------------------------------
+local function restore_reform_window()
 
   if valid_selection then
     show_window()
@@ -1824,11 +1824,11 @@ end
 --MENU/HOTKEY ENTRIES-------------------------------------------------------------------------------- 
 
 renoise.tool():add_menu_entry { 
-  name = "Main Menu:Tools:Restore Resize Window...", 
-  invoke = function() restore_resize_window() end 
+  name = "Main Menu:Tools:Restore Reform Window...", 
+  invoke = function() restore_reform_window() end 
 }
 
 renoise.tool():add_menu_entry { 
-  name = "Pattern Editor:Resize Selection...", 
-  invoke = function() resize_selection() end 
+  name = "Pattern Editor:Reform Selection...", 
+  invoke = function() reform_selection() end 
 }
