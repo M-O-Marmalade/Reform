@@ -11,31 +11,31 @@ local debugvars = {
   print_notifier_trigger = false,
   print_restorations = false, --prints restorations of existing notes to terminal when set true
   print_valuefield = false, --prints info from valuefields when set true
-  clocks = false, --prints out profiling clocks in different parts of the code when set true
+  print_clocks = false, --prints out profiling clocks in different parts of the code when set true
   clocktotals = {},
   tempclocks = {}
 }
 
 local function resetclock(num)
-  if debugvars.clocks then
+  if debugvars.print_clocks then
     debugvars.clocktotals[num] = 0
   end
 end
 
 local function setclock(num)
-  if debugvars.clocks then
+  if debugvars.print_clocks then
     debugvars.tempclocks[num] = os.clock()
   end
 end
 
 local function addclock(num)
-  if debugvars.clocks then    
+  if debugvars.print_clocks then    
     debugvars.clocktotals[num] = debugvars.clocktotals[num] + (os.clock() - debugvars.tempclocks[num])
   end
 end
 
 local function readclock(num,msg)
-  if debugvars.clocks then
+  if debugvars.print_clocks then
     print(msg .. debugvars.clocktotals[num] or "nil")
   end 
 end
@@ -49,6 +49,9 @@ local vb = renoise.ViewBuilder()
 local window_obj = nil
 local window_content = nil
 local vb_notifiers_on
+
+local previous_time = 0
+local idle_processing = false --if apply_resize() takes longer than 40ms, this becomes true
 
 local selection
 local valid_selection
@@ -72,11 +75,11 @@ local resize_flags = {
   redistribute = false
 }
 
-local pattern_lengths = {} --an array of []{length, valid, notifier}
+local pattern_lengths = {} --[pattern_index]{length, valid, notifier}
 local seq_length = { length = 0, valid = false }
-local visible_note_columns = {}
-local visible_effect_columns = {}
-local track_count = {}
+local visible_note_columns = {} --[track_index]{amount, valid, notifier}
+local visible_effect_columns = {} --[track_index]{amount, valid, notifier}
+local track_count = {} --{amount, valid, notifier}
 
 local time = 0
 local time_multiplier = 1
@@ -206,9 +209,22 @@ local function release_document()
   seq_length.valid = false
   
   --invalidate all recorded pattern lengths
-  for k, v in pairs(pattern_lengths) do    
+  for k, v in pairs(pattern_lengths) do
     v.valid = false
   end
+  
+  --invalidate all recorded visible note columns for tracks
+  for k, v in pairs(visible_note_columns) do
+    v.valid = false
+  end
+  
+  --invalidate all recorded visible effect columns for tracks
+  for k, v in pairs(visible_effect_columns) do
+    v.valid = false
+  end  
+  
+  --invalidate recorded total track count
+  track_count.valid = false
   
 end  
   
@@ -1081,6 +1097,12 @@ end
 --APPLY RESIZE------------------------------------------
 local function apply_resize()
 
+resetclock(0)
+setclock(0)
+  
+  --set the clock we will use to determine if idle processing will be necessary next time
+  previous_time = os.clock()
+
   --print("apply_resize()")
   
   if not valid_selection then
@@ -1109,16 +1131,16 @@ setclock(1)
     place_new_note(k)
   end
 
-readclock(2,"clock2: ")
-readclock(3,"find_correct_index clock: ")
-readclock(4,"get_existing_note clock: ")
-readclock(5,"update_current_note_location clock: ")
-readclock(6,"set_note_column_values clock: ")
+--readclock(2,"clock2: ")
+--readclock(3,"find_correct_index clock: ")
+--readclock(4,"get_existing_note clock: ")
+--readclock(5,"update_current_note_location clock: ")
+--readclock(6,"set_note_column_values clock: ")
 --readclock(7,"is_storable clock: ") --removed
-readclock(8,"storing notes clock: ")
+--readclock(8,"storing notes clock: ")
 
 addclock(1)
-readclock(1,"place_new_note total clock: ")
+--readclock(1,"place_new_note total clock: ")
   
   --show delay columns and note columns...
   --for first track
@@ -1152,13 +1174,14 @@ readclock(1,"place_new_note total clock: ")
   
   update_start_pos()
   
+  previous_time = os.clock() - previous_time
+  
+addclock(0)
+readclock(0,"apply_resize() total clock: ")
+  
 end
 
-
---if performance becomes a problem, we can use add_resize_idle_notifier() instead of apply_resize()
---for now, we will use apply_resize() though, as performance is pretty good, and feels good to have changes be fluid
-
---[[
+--if performance becomes a problem, we use add_resize_idle_notifier() instead of apply_resize()
 --APPLY RESIZE NOTIFIER----------------------------------
 local function apply_resize_notifier()
     
@@ -1180,7 +1203,24 @@ local function add_resize_idle_notifier()
   end
 
 end
---]]
+
+--QUEUE PROCESSING--------------------------------------
+local function queue_processing()
+
+  if not idle_processing then
+    apply_resize()
+  else
+    add_resize_idle_notifier()
+  end
+  
+  --if apply_resize() took longer than 40ms, we will move processing to idle notifier next time
+  if previous_time < 0.04 then
+    idle_processing = false
+  else
+    idle_processing = true
+  end
+
+end
 
 --REPOSITION CONTROLS----------------------------------------------
 local function reposition_controls()
@@ -1220,7 +1260,7 @@ end
 --UP KEY--------------------------------------------
 local function up_key()
   
-  local s,t,l = get_index(
+  local s,_,l = get_index(
     song.selected_sequence_index,
     1,
     song.selected_line_index - 1,
@@ -1235,7 +1275,7 @@ end
 --DOWN KEY--------------------------------------------
 local function down_key()
 
-  local s,t,l = get_index(
+  local s,_,l = get_index(
     song.selected_sequence_index,
     1,
     song.selected_line_index + 1,
@@ -1271,8 +1311,7 @@ local function left_key()
   
   song.selected_sequence_index = s
   song.selected_track_index = t
-  song.selected_line_index = l
-  
+  song.selected_line_index = l  
   if nc then song.selected_note_column_index = nc
   elseif ec then song.selected_effect_column_index = ec end
 
@@ -1302,10 +1341,47 @@ local function right_key()
   
   song.selected_sequence_index = s
   song.selected_track_index = t
+  song.selected_line_index = l  
+  if nc then song.selected_note_column_index = nc
+  elseif ec then song.selected_effect_column_index = ec end
+
+end
+
+--TAB KEY----------------------------------------
+local function tab_key()
+
+  local s,t,l,nc,ec = get_index(
+    song.selected_sequence_index,
+    song.selected_track_index + 1,
+    song.selected_line_index,
+    1
+  )
+  
+  song.selected_sequence_index = s
+  song.selected_track_index = t
   song.selected_line_index = l
   
   if nc then song.selected_note_column_index = nc
-  elseif ec then song.selected_effect_column_index = ec end
+  elseif ec then song.selected_effect_column_index = ec end  
+
+end
+
+--SHIFT TAB KEY----------------------------------------
+local function shift_tab_key()
+
+  local s,t,l,nc,ec = get_index(
+    song.selected_sequence_index,
+    song.selected_track_index - 1,
+    song.selected_line_index,
+    1
+  )
+  
+  song.selected_sequence_index = s
+  song.selected_track_index = t
+  song.selected_line_index = l
+  
+  if nc then song.selected_note_column_index = nc
+  elseif ec then song.selected_effect_column_index = ec end  
 
 end
 
@@ -1362,7 +1438,7 @@ local function show_window()
                   if debugvars.print_valuefield then print("time tonumber = " .. val) end
                   typed_time = val
                   time_was_typed = true                     
-                  apply_resize()
+                  queue_processing()
                 end
                 return val
               end,
@@ -1402,7 +1478,7 @@ local function show_window()
                     time = value
                   end              
                   time_was_typed = false
-                  apply_resize() 
+                  queue_processing() 
                 end
               end    
             }
@@ -1423,7 +1499,7 @@ local function show_window()
                 if vb_notifiers_on then
                   time_multiplier = value
                   time_was_typed = false
-                  apply_resize()
+                  queue_processing()
                 end
               end 
             } --close rotary            
@@ -1464,7 +1540,7 @@ local function show_window()
                   if debugvars.print_valuefield then print("offset tonumber = " .. val) end
                   typed_offset = val
                   offset_was_typed = true
-                  apply_resize()
+                  queue_processing()
                 end
                 return val
               end,
@@ -1500,7 +1576,7 @@ local function show_window()
                 if vb_notifiers_on then
                   offset_was_typed = false
                   offset = -value
-                  apply_resize()
+                  queue_processing()
                 end
               end    
             }
@@ -1521,7 +1597,7 @@ local function show_window()
                 if vb_notifiers_on then
                   offset_was_typed = false
                   offset_multiplier = value
-                  apply_resize()
+                  queue_processing()
                 end
               end 
             } --close rotary
@@ -1543,7 +1619,7 @@ local function show_window()
             notifier = function(value)
               if vb_notifiers_on then
                 resize_flags.overflow = value
-                apply_resize()
+                queue_processing()
               end
             end 
           },
@@ -1555,7 +1631,7 @@ local function show_window()
             notifier = function(value)
               if vb_notifiers_on then
                 resize_flags.condense = value
-                apply_resize()
+                queue_processing()
               end
             end 
           },
@@ -1567,7 +1643,7 @@ local function show_window()
             notifier = function(value)
               if vb_notifiers_on then
                 resize_flags.redistribute = value
-                apply_resize()
+                queue_processing()
               end
             end 
           }
@@ -1590,7 +1666,7 @@ local function show_window()
                 if vb_notifiers_on then
                   anchor = value - 1
                   reposition_controls()
-                  apply_resize()
+                  queue_processing()
                 end
               end
             },
@@ -1604,7 +1680,7 @@ local function show_window()
                 if vb_notifiers_on then
                   anchor_type = value
                   update_start_pos()
-                  apply_resize()
+                  queue_processing()
                 end
               end
             }
@@ -1622,17 +1698,19 @@ local function show_window()
       if not key.repeated then
       
         if key.modifiers == "" then
-        
-          if key.name == "space" then space_key() end
           
+          if key.name == "esc" then dialog:close() end        
+          if key.name == "space" then space_key() end          
           if key.name == "up" then up_key() end
           if key.name == "down" then down_key() end
           if key.name == "left" then left_key() end
-          if key.name == "right" then right_key() end
+          if key.name == "right" then right_key() end          
+          if key.name == "tab" then tab_key() end
           
         elseif key.modifiers == "shift" then
         
-          if key.name == "space" then shift_space_key() end
+          if key.name == "space" then shift_space_key() end          
+          if key.name == "tab" then shift_tab_key() end
         
         elseif key.modifiers == "alt" then
         
@@ -1657,9 +1735,12 @@ local function show_window()
           if key.name == "up" then up_key() end
           if key.name == "down" then down_key() end
           if key.name == "left" then left_key() end
-          if key.name == "right" then right_key() end
+          if key.name == "right" then right_key() end          
+          if key.name == "tab" then tab_key() end
         
         elseif key.modifiers == "shift" then
+        
+          if key.name == "tab" then shift_tab_key() end
         
         elseif key.modifiers == "alt" then
         
