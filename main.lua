@@ -1823,12 +1823,22 @@ end
 
 --MENU/HOTKEY ENTRIES-------------------------------------------------------------------------------- 
 
-renoise.tool():add_menu_entry { 
-  name = "Main Menu:Tools:Restore Reform Window...", 
+renoise.tool():add_menu_entry {
+  name = "Pattern Editor:Reform Selection...", 
+  invoke = function() reform_selection() end 
+}
+
+renoise.tool():add_menu_entry {
+  name = "Main Menu:Tools:Restore Reform Window", 
   invoke = function() restore_reform_window() end 
 }
 
-renoise.tool():add_menu_entry { 
-  name = "Pattern Editor:Reform Selection...", 
-  invoke = function() reform_selection() end 
+renoise.tool():add_keybinding {
+  name = "Pattern Editor:Selection:Reform Selection", 
+  invoke = function(repeated) if not repeated then reform_selection() end end
+}
+
+renoise.tool():add_keybinding {
+  name = "Pattern Editor:Selection:Restore Reform Window", 
+  invoke = function(repeated) if not repeated then restore_reform_window() end end
 }
