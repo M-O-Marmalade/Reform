@@ -53,6 +53,52 @@ local vb_notifiers_on
 local previous_time = 0
 local idle_processing = false --if apply_reform() takes longer than 40ms, this becomes true
 
+local selected_notes = {} --contains all of our notes to be processed
+--[[
+  the selected_notes "struct" consists of...
+  
+  [1,2 .. n]{
+    
+    --the index where the note originated from
+    original_index = {s,p,t,c,l}
+    
+    --original values stored from the note
+    note_value
+    instrument_value
+    volume_value 
+    panning_value
+    delay_value
+    effect_number_value
+    effect_amount_value
+    
+    rel_line_pos --the line difference between current_location and original_index
+    
+    current_location = {s,p,t,c,l}  --the new/current index of the note after processing
+    
+    --precomputed placement values to use for different types of operations
+    placement    
+    redistributed_placement_in_note_range    
+    redistributed_placement_in_sel_range
+    
+    last_overwritten_values = {
+      note_value
+      instrument_value
+      volume_value
+      panning_value
+      delay_value
+      effect_number_value
+      effect_amount_value
+    }
+    
+    flags = {      
+      write --tells whether this note should overwrite whatever is at the same index as it is
+      clear --tells whether this note should clear the index it is at when it leaves
+      restore --tells whether this note should restore anything next time restoration occurs          
+    }
+    
+  }
+--]]
+
 local selection
 local valid_selection
 local selected_seq
@@ -61,18 +107,20 @@ local originally_visible_note_columns = {}
 local columns_overflowed_into = {}
 local column_to_end_on_in_first_track
 local is_note_track = {} --bools indicating if the track at that index supports note columns
-local selected_notes = {}
 local total_delay_range
 local total_line_range
 local earliest_placement
 local latest_placement
 local placed_notes = {}
+local note_collisions = {ours = {}, wild = {}}
 local start_pos = renoise.SongPos()
 
-local reform_flags = {
+local global_flags = {
   overflow = true,
   condense = false,
-  redistribute = false
+  redistribute = false,
+  our_notes = false,
+  wild_notes = false
 }
 
 local pattern_lengths = {} --[pattern_index]{length, valid, notifier}
@@ -123,7 +171,7 @@ local function reset_variables()
   earliest_placement = math.huge
   latest_placement = 0
   
-  reform_flags = {   
+  global_flags = {   
     overflow = true,
     condense = false,
     redistribute = false
@@ -143,9 +191,9 @@ local function reset_view()
   vb.views.offset_text.value = offset
   vb.views.offset_slider.value = offset
   vb.views.offset_multiplier_rotary.value = offset_multiplier
-  vb.views.overflow_flag_checkbox.value = reform_flags.overflow
-  vb.views.condense_flag_checkbox.value = reform_flags.condense
-  vb.views.redistribute_flag_checkbox.value = reform_flags.redistribute
+  vb.views.overflow_flag_checkbox.value = global_flags.overflow
+  vb.views.condense_flag_checkbox.value = global_flags.condense
+  vb.views.redistribute_flag_checkbox.value = global_flags.redistribute
   vb.views.anchor_switch.value = anchor + 1
   vb.views.anchor_type_switch.value = anchor_type
   
@@ -263,9 +311,9 @@ end
 --STORE NOTE--------------------------------------------
 local function store_note(s,p,t,c,l,counter)
   
-  local column_to_store = song:pattern(p):track(t):line(l):note_column(c)
+  local column = song:pattern(p):track(t):line(l):note_column(c)
   
-  if not column_to_store.is_empty then
+  if not column.is_empty then
     
     --create a table to store our note info
     selected_notes[counter] = {}
@@ -280,13 +328,13 @@ local function store_note(s,p,t,c,l,counter)
     }
     
     --store all of the values for this note column (note,instr,vol,pan,dly,fx)
-    selected_notes[counter].note_value = column_to_store.note_value
-    selected_notes[counter].instrument_value = column_to_store.instrument_value
-    selected_notes[counter].volume_value = column_to_store.volume_value 
-    selected_notes[counter].panning_value = column_to_store.panning_value 
-    selected_notes[counter].delay_value = column_to_store.delay_value 
-    selected_notes[counter].effect_number_value = column_to_store.effect_number_value 
-    selected_notes[counter].effect_amount_value = column_to_store.effect_amount_value
+    selected_notes[counter].note_value = column.note_value
+    selected_notes[counter].instrument_value = column.instrument_value
+    selected_notes[counter].volume_value = column.volume_value 
+    selected_notes[counter].panning_value = column.panning_value 
+    selected_notes[counter].delay_value = column.delay_value 
+    selected_notes[counter].effect_number_value = column.effect_number_value 
+    selected_notes[counter].effect_amount_value = column.effect_amount_value
     
     --initialize the location of the note
     selected_notes[counter].current_location = {
@@ -299,20 +347,9 @@ local function store_note(s,p,t,c,l,counter)
     
     --initialize our relative line position
     selected_notes[counter].rel_line_pos = l
-    
-    --initialize empty data to replace its spot when it moves
-    selected_notes[counter].last_overwritten_values = {
-      note_value = 121,
-      instrument_value = 255,
-      volume_value = 255,
-      panning_value = 255,
-      delay_value = 0,
-      effect_number_value = 0,
-      effect_amount_value = 0
-    }
-    
-    --initalize our flag so that the note will leave an empty space behind when it moves
-    selected_notes[counter].restore_flag = true
+
+    --initalize our flags so that the note will leave an empty space behind when it moves
+    selected_notes[counter].flags = {write = true, clear = true, restore = false}
     
     --increment our index counter by one, as we have just finished storing one new note in our table
     counter = counter + 1
@@ -790,7 +827,7 @@ local function find_correct_index(s,p,t,l,c)
   p = song.sequencer:pattern(s)
   
   --if overflow is on, then push notes out to empty columns when available
-  if reform_flags.overflow then
+  if global_flags.overflow then
     while true do
       if c == 12 then break
       elseif song:pattern(p):track(t):line(l):note_column(c).is_empty then break
@@ -804,7 +841,7 @@ local function find_correct_index(s,p,t,l,c)
   
   
   --if condense is on, then pull notes in to empty columns when available
-  if reform_flags.condense then
+  if global_flags.condense then
     while true do
       if c == 1 then break
       elseif not song:pattern(p):track(t):line(l):note_column(c-1).is_empty then break
@@ -827,15 +864,15 @@ local function set_track_visibility(t)
 end
 
 --SET NOTE COLUMN VALUES----------------------------------------------
-local function set_note_column_values(column,new_values)
+local function set_note_column_values(column,vals)
 
-  column.note_value = new_values.note_value
-  column.instrument_value = new_values.instrument_value
-  column.volume_value = new_values.volume_value
-  column.panning_value = new_values.panning_value
-  column.delay_value = new_values.delay_value
-  column.effect_number_value = new_values.effect_number_value
-  column.effect_amount_value = new_values.effect_amount_value
+  column.note_value = vals.note_value
+  column.instrument_value = vals.instrument_value
+  column.volume_value = vals.volume_value
+  column.panning_value = vals.panning_value
+  column.delay_value = vals.delay_value
+  column.effect_number_value = vals.effect_number_value
+  column.effect_amount_value = vals.effect_amount_value
 
 end
 
@@ -843,49 +880,35 @@ end
 local function restore_old_note(counter)
 
   --access the ptcl values we will be indexing
-  local restore_index = {
-    p = selected_notes[counter].current_location.p,
-    t = selected_notes[counter].current_location.t,
-    c = selected_notes[counter].current_location.c,
-    l = selected_notes[counter].current_location.l
-  }
+  local p = selected_notes[counter].current_location.p
+  local t = selected_notes[counter].current_location.t
+  local c = selected_notes[counter].current_location.c
+  local l = selected_notes[counter].current_location.l
   
-  --[[
-  --clear the column clean
-  song:pattern(restore_index.p):track(restore_index.t):line(restore_index.l):note_column(restore_index.c):clear()
-  --]]
+  if selected_notes[counter].flags.clear then  --if this note's clear flag is true...
+    song:pattern(p):track(t):line(l):note_column(c):clear() --clear the column clean
   
-  --exit this function here if this note is not supposed to restore anything
-  if not selected_notes[counter].restore_flag then 
-    if debugvars.print_restorations then
-      print(("not restoring note %i because it's flag is set false!"):format(counter))
-    end
-    return 
-  end   
+  elseif selected_notes[counter].flags.restore then  --else, if this note's restore flag is true...
+
+    --restore the note
+    set_note_column_values(
+      song:pattern(p):track(t):line(l):note_column(c),
+      selected_notes[counter].last_overwritten_values
+    )
     
-  if debugvars.print_restorations then
-    print(("restoring note %i because it's flag is set true!"):format(counter))
   end
-    
-  --access the column we will need to restore
-  local column_to_restore = song:pattern(restore_index.p):track(restore_index.t):line(restore_index.l):note_column(restore_index.c)
-  
-  --access the values to restore
-  local stored_note_values = selected_notes[counter].last_overwritten_values
-  
-  --restore the note
-  set_note_column_values( column_to_restore, stored_note_values)
-  
-  return true
+      
 end
 
---IS STORABLE-----------------------------------------
-local function is_storable(index,counter)
+--IS WILD-----------------------------------------
+local function is_wild(index,counter)
 
   if not placed_notes[index.p] then return true end
   if not placed_notes[index.p][index.t] then return true end
   if not placed_notes[index.p][index.t][index.l] then return true end
-  if not placed_notes[index.p][index.t][index.l][index.c] then return true--return true if no notes were found to be storing data at this spot
+  if not placed_notes[index.p][index.t][index.l][index.c] then 
+    return true--return true if no notes were found to be storing data at this spot
+  
   else return false end --return false if we found one of our notes already in this spot
   
 end
@@ -893,35 +916,64 @@ end
 --GET EXISTING NOTE----------------------------------------------
 local function get_existing_note(index,counter)
 
-  --access the new column that we need to store
-  local column_to_store = song:pattern(index.p):track(index.t):line(index.l):note_column(index.c)
+  --access the column that we need to store
+  local column = song:pattern(index.p):track(index.t):line(index.l):note_column(index.c)
 
-  --if this spot is not empty, and is not already occupied by our own notes...
-  if (not column_to_store.is_empty) and (not is_storable(index,counter)) then
+  if column.is_empty then --if this spot is empty...
     
-    selected_notes[counter].restore_flag = false  --set this note's flag to false
+    selected_notes[counter].flags.write = true --set this note's write flag to true
+    selected_notes[counter].flags.clear = true --set this note's clear flag to true
+    selected_notes[counter].flags.restore = false  --set this note's restore flag to false
     
-  else  --otherwise, if it is a note that should be stored...
-
-setclock(8)
-  
-    selected_notes[counter].restore_flag = true  --set this note's flag to true
+  else --else, if this spot is not empty...
+    if is_wild(index,counter) then  --if this spot is occupied by a "wild" note...
       
-    --and store the data from the column we're overwriting
-    selected_notes[counter].last_overwritten_values = {
-      note_value = column_to_store.note_value,
-      instrument_value = column_to_store.instrument_value,
-      volume_value = column_to_store.volume_value,
-      panning_value = column_to_store.panning_value,
-      delay_value = column_to_store.delay_value,
-      effect_number_value = column_to_store.effect_number_value,
-      effect_amount_value = column_to_store.effect_amount_value
-    }
-
-addclock(8)
+      note_collisions.wild[counter] = true  --record a wild collision for this note
+      
+      if global_flags.wild_notes then --if we are overwriting wild notes with our notes...
+        
+        selected_notes[counter].flags.write = true --set this note's write flag to true
+        selected_notes[counter].flags.clear = false --set this note's clear flag to false
+        selected_notes[counter].flags.restore = true  --set this note's restore flag to true        
+        
+        --and store the data from the column we're overwriting
+        selected_notes[counter].last_overwritten_values = {
+          note_value = column.note_value,
+          instrument_value = column.instrument_value,
+          volume_value = column.volume_value,
+          panning_value = column.panning_value,
+          delay_value = column.delay_value,
+          effect_number_value = column.effect_number_value,
+          effect_amount_value = column.effect_amount_value
+        }
+        
+      else  --else, if we are not overwriting wild notes with our own...
+        
+        selected_notes[counter].flags.write = false --set this note's write flag to false
+        selected_notes[counter].flags.clear = false --set this note's clear flag to false
+        selected_notes[counter].flags.restore = false  --set this note's restore flag to false 
+        
+      end
     
-  end
-  
+    else  --else, if it is one of our own notes...
+    
+      note_collisions.ours[counter] = true  --record a collision between our own notes for this note
+      
+      if global_flags.our_notes then  --if we are overwriting our own notes...
+        
+        selected_notes[counter].flags.write = true --set this note's write flag to true
+        selected_notes[counter].flags.clear = false --set this note's clear flag to false
+        selected_notes[counter].flags.restore = false  --set this note's restore flag to false
+        
+      else  --else, if we are not overwriting our own notes
+      
+        selected_notes[counter].flags.write = false --set this note's write flag to false
+        selected_notes[counter].flags.clear = false --set this note's clear flag to false
+        selected_notes[counter].flags.restore = false  --set this note's restore flag to false
+      
+      end --end: if global_flags.our_notes    
+    end --end: if is_wild()
+  end --end: column.is_empty
 end
 
 --UPDATE CURRENT NOTE LOCATION----------------------------------------
@@ -975,7 +1027,7 @@ setclock(2)
   
   --decide which placement values to use
   local placement
-  if reform_flags.redistribute then --if redistribution flag is set, we use the redistributed places
+  if global_flags.redistribute then --if redistribution flag is set, we use the redistributed places
     if anchor_type == 1 then
       placement = selected_notes[counter].redistributed_placement_in_note_range
     else
@@ -1026,23 +1078,22 @@ setclock(5)
 
 addclock(5)
   
-  local note_values = {
-    note_value = selected_notes[counter].note_value,
-    instrument_value = selected_notes[counter].instrument_value,
-    volume_value = selected_notes[counter].volume_value,
-    panning_value = selected_notes[counter].panning_value,
-    delay_value = selected_notes[counter].delay_value,
-    effect_number_value = selected_notes[counter].effect_number_value,
-    effect_amount_value = selected_notes[counter].effect_amount_value
-  }  
-  
-
-  
-  note_values.delay_value = new_delay_value
-  
 setclock(6)
   
-  set_note_column_values(column, note_values)
+  if selected_notes[counter].flags.write then
+    set_note_column_values(
+      column,
+      {
+        note_value = selected_notes[counter].note_value,
+        instrument_value = selected_notes[counter].instrument_value,
+        volume_value = selected_notes[counter].volume_value,
+        panning_value = selected_notes[counter].panning_value,
+        delay_value = new_delay_value,
+        effect_number_value = selected_notes[counter].effect_number_value,
+        effect_amount_value = selected_notes[counter].effect_amount_value
+      }  
+    )
+  end
   
 addclock(6)
   
@@ -1075,6 +1126,27 @@ local function update_valuefields()
   --print("update_valuefields() end")
   
   return true
+end
+
+--UPDATE COLLISION BITMAPS--------------------------------
+local function update_collision_bitmaps()
+
+  local our_collisions,wild_collisions = false,false
+  
+  for k,v in pairs(note_collisions.ours) do
+    if v then our_collisions = true end
+  end
+
+  for k,v in pairs(note_collisions.wild) do
+    if v then wild_collisions = true end
+  end
+  
+  if our_collisions then our_collisions = 1 else our_collisions = 0 end
+  if wild_collisions then wild_collisions = 1 else wild_collisions = 0 end
+
+  vb.views.our_notes_collisions_bitmap.bitmap = ("Bitmaps/%i.bmp"):format(our_collisions)
+  vb.views.wild_notes_collisions_bitmap.bitmap = ("Bitmaps/%i.bmp"):format(wild_collisions)
+
 end
 
 --UPDATE START POS----------------------------
@@ -1112,6 +1184,8 @@ setclock(0)
   end
   
   table.clear(columns_overflowed_into)
+  table.clear(note_collisions.ours)
+  table.clear(note_collisions.wild)
   
   --restore everything to how it was, so we don't run into our own notes during calculations
   for k in ipairs(selected_notes) do
@@ -1136,7 +1210,7 @@ setclock(1)
 --readclock(4,"get_existing_note clock: ")
 --readclock(5,"update_current_note_location clock: ")
 --readclock(6,"set_note_column_values clock: ")
---readclock(7,"is_storable clock: ") --removed
+--readclock(7,"is_wild clock: ") --removed
 --readclock(8,"storing notes clock: ")
 
 addclock(1)
@@ -1171,6 +1245,9 @@ addclock(1)
   
   --update our multiplier text
   update_valuefields()
+  
+  --update our collision indicator bitmaps
+  update_collision_bitmaps()
   
   update_start_pos()
   
@@ -1401,6 +1478,26 @@ local function show_window()
       id = "window_content",
       width = 144,  --set the window's width
       
+      vb:horizontal_aligner {
+        mode = "right",
+        margin = default_margin,
+        
+        vb:bitmap {
+          tooltip = "Indicates if our own notes are colliding with each other",
+          id = "our_notes_collisions_bitmap",
+          mode = "button_color",
+          bitmap = "Bitmaps/0.bmp"
+        },
+        
+        vb:bitmap {
+          tooltip = "Indicates if any of our notes are colliding with wild notes",
+          id = "wild_notes_collisions_bitmap",
+          mode = "button_color",
+          bitmap = "Bitmaps/0.bmp"
+        }
+      
+      },
+            
       vb:horizontal_aligner { --aligns time/offset control groups to window width
         mode = "distribute",
         margin = default_margin,
@@ -1615,10 +1712,10 @@ local function show_window()
           vb:checkbox { 
             id = "overflow_flag_checkbox", 
             tooltip = "Overflow Mode",
-            value = reform_flags.overflow, 
+            value = global_flags.overflow, 
             notifier = function(value)
               if vb_notifiers_on then
-                reform_flags.overflow = value
+                global_flags.overflow = value
                 queue_processing()
               end
             end 
@@ -1627,10 +1724,10 @@ local function show_window()
           vb:checkbox { 
             id = "condense_flag_checkbox", 
             tooltip = "Condense Mode",
-            value = reform_flags.condense, 
+            value = global_flags.condense, 
             notifier = function(value)
               if vb_notifiers_on then
-                reform_flags.condense = value
+                global_flags.condense = value
                 queue_processing()
               end
             end 
@@ -1639,10 +1736,10 @@ local function show_window()
           vb:checkbox { 
             id = "redistribute_flag_checkbox", 
             tooltip = "Redistribute Mode",
-            value = reform_flags.redistribute, 
+            value = global_flags.redistribute, 
             notifier = function(value)
               if vb_notifiers_on then
-                reform_flags.redistribute = value
+                global_flags.redistribute = value
                 queue_processing()
               end
             end 
@@ -1652,39 +1749,78 @@ local function show_window()
         vb:vertical_aligner { --aligns our switches to the bottom of the window
           mode = "bottom",
           margin = default_margin,
-        
-          vb:column { --column containing our switches
+          
+          vb:column {
             style = "group",
             margin = default_margin,
-          
+            
             vb:switch {
-              id = "anchor_switch",
-              width = 64,
-              value = 1,
-              items = {"Top", "End"},
+              width = 94,
+              id = "our_notes_flag_switch", 
+              tooltip = "In the event of our processed notes colliding with each other, which one should overwrite the other?",
+              items = {"Earlier","Later"},
+              value = 1, 
               notifier = function(value)
                 if vb_notifiers_on then
-                  anchor = value - 1
-                  reposition_controls()
+                  if value == 1 then global_flags.our_notes = false
+                  elseif value == 2 then global_flags.our_notes = true end
                   queue_processing()
                 end
-              end
+              end 
             },
             
             vb:switch {
-              id = "anchor_type_switch",
-              width = 64,
-              value = 1,
-              items = {"Note", "Select"},
+              width = 94,
+              id = "wild_notes_flag_switch", 
+              tooltip = "In the event of our processed notes colliding with notes outside of our selection, which one should overwrite the other?",
+              items = {"Not","Selected"},
+              value = 1, 
               notifier = function(value)
                 if vb_notifiers_on then
-                  anchor_type = value
-                  update_start_pos()
+                  if value == 1 then global_flags.wild_notes = false
+                  elseif value == 2 then global_flags.wild_notes = true end
                   queue_processing()
                 end
-              end
+              end 
             }
-          } --close switches column
+          },
+          
+          vb:horizontal_aligner {
+            mode = "right",
+          
+            vb:column { --column containing our switches
+              style = "group",
+              margin = default_margin,
+            
+              vb:switch {
+                id = "anchor_switch",
+                width = 64,
+                value = 1,
+                items = {"Top", "End"},
+                notifier = function(value)
+                  if vb_notifiers_on then
+                    anchor = value - 1
+                    reposition_controls()
+                    queue_processing()
+                  end
+                end
+              },
+              
+              vb:switch {
+                id = "anchor_type_switch",
+                width = 64,
+                value = 1,
+                items = {"Note", "Select"},
+                notifier = function(value)
+                  if vb_notifiers_on then
+                    anchor_type = value
+                    update_start_pos()
+                    queue_processing()
+                  end
+                end
+              }
+            } --close switches column
+          } --close switches horizontal aligner
         } --close switches vertical aligner  
       } --close checkbox/switches horizontal aligner
     } --close window_content column
