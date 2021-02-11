@@ -9,7 +9,6 @@ end
 local debugvars = {
   print_notifier_attach = false,
   print_notifier_trigger = false,
-  print_restorations = false, --prints restorations of existing notes to terminal when set true
   print_valuefield = false, --prints info from valuefields when set true
   print_clocks = false, --prints out profiling clocks in different parts of the code when set true
   clocktotals = {},
@@ -80,6 +79,7 @@ local selected_notes = {} --contains all of our notes to be processed
     redistributed_placement_in_note_range    
     redistributed_placement_in_sel_range
     
+    --values stored from last spot this note overwrote
     last_overwritten_values = {
       note_value
       instrument_value
@@ -134,6 +134,23 @@ local time_multiplier = 1
 local time_was_typed = false
 local typed_time = 1
 
+local curve_intensity = 0
+local curve_points = {
+  selected = 2,
+  {
+    positive = {{0,1,1},{1,1,1},{1,0,1}},
+    negative = {{0,1,1},{0,0,1},{1,0,1}},
+    samplesize = 32
+  },
+  {
+    positive = {{0,1,1},{0.5,1,4},{0.5,0,4},{1,0,1}},
+    negative = {{0,1,1},{0,0.5,4},{1,0.5,4},{1,0,1}},
+    samplesize = 54
+  }
+}
+local pascals_triangle = {}
+local curve_display = {display = {}, buffer1 = {}, buffer2 = {}}
+
 local offset = 0
 local offset_multiplier = 1
 local offset_was_typed = false
@@ -160,6 +177,8 @@ local function reset_variables()
   time_was_typed = false
   typed_time = 1
   
+  curve_intensity = 0
+  
   offset = 0
   offset_multiplier = 1
   offset_was_typed = false
@@ -185,8 +204,8 @@ local function reset_view()
 
   vb_notifiers_on = false
   
-  vb.views.time_text.value = time
-  vb.views.time_slider.value = time
+  vb.views.time_text.value = 1
+  vb.views.time_slider.value = 0
   vb.views.time_multiplier_rotary.value = time_multiplier
   vb.views.offset_text.value = offset
   vb.views.offset_slider.value = offset
@@ -1166,139 +1185,6 @@ local function update_start_pos()
   return true
 end
 
---APPLY REFORM------------------------------------------
-local function apply_reform()
-
-resetclock(0)
-setclock(0)
-  
-  --set the clock we will use to determine if idle processing will be necessary next time
-  previous_time = os.clock()
-
-  --print("apply_reform()")
-  
-  if not valid_selection then
-    app:show_error("There is no valid selection to operate on!")
-    deactivate_controls()
-    return false
-  end
-  
-  table.clear(columns_overflowed_into)
-  table.clear(note_collisions.ours)
-  table.clear(note_collisions.wild)
-  
-  --restore everything to how it was, so we don't run into our own notes during calculations
-  for k in ipairs(selected_notes) do
-    restore_old_note(k)
-  end
-  
-  --clear our "placed_notes" table so we can lay them down one by one cleanly
-  table.clear(placed_notes)
-
-for i = 1, 9 do
-resetclock(i)
-end
-setclock(1)
-  
-  --place our notes into place one by one
-  for k in ipairs(selected_notes) do
-    place_new_note(k)
-  end
-
---readclock(2,"clock2: ")
---readclock(3,"find_correct_index clock: ")
---readclock(4,"get_existing_note clock: ")
---readclock(5,"update_current_note_location clock: ")
---readclock(6,"set_note_column_values clock: ")
---readclock(7,"is_wild clock: ") --removed
---readclock(8,"storing notes clock: ")
-
-addclock(1)
---readclock(1,"place_new_note total clock: ")
-  
-  --show delay columns and note columns...
-  --for first track
-  if is_note_track[selection.start_track] then
-    song:track(selection.start_track).delay_column_visible = true
-    set_track_visibility(selection.start_track)
-  end
-  
-  --for all middle tracks
-  if selection.end_track - selection.start_track > 1 then
-    for t = selection.start_track + 1, selection.end_track - 1 do 
-      if is_note_track[t] then     
-        --show delay column
-        song:track(t).delay_column_visible = true     
-        --update note column visibility
-        set_track_visibility(t)
-      end
-    end
-  end  
-  
-  --and for the last track
-  if is_note_track[selection.end_track] then
-    --show delay column
-    song:track(selection.end_track).delay_column_visible = true  
-    --update note column visibility
-    set_track_visibility(selection.end_track)
-  end
-  
-  --update our multiplier text
-  update_valuefields()
-  
-  --update our collision indicator bitmaps
-  update_collision_bitmaps()
-  
-  update_start_pos()
-  
-  previous_time = os.clock() - previous_time
-  
-addclock(0)
-readclock(0,"apply_reform() total clock: ")
-  
-end
-
---if performance becomes a problem, we use add_reform_idle_notifier() instead of apply_reform()
---APPLY REFORM NOTIFIER----------------------------------
-local function apply_reform_notifier()
-    
-  apply_reform()
-  
-  tool.app_idle_observable:remove_notifier(apply_reform_notifier)
-  
-  if debugvars.print_notifier_trigger then print("idle notifier triggered!") end
-end
-
---ADD REFORM IDLE NOTIFIER--------------------------------------
-local function add_reform_idle_notifier()
-  
-  
-  if not tool.app_idle_observable:has_notifier(apply_reform_notifier) then
-    tool.app_idle_observable:add_notifier(apply_reform_notifier)
-  
-    if debugvars.print_notifier_attach then print("idle notifier attached!") end
-  end
-
-end
-
---QUEUE PROCESSING--------------------------------------
-local function queue_processing()
-
-  if not idle_processing then
-    apply_reform()
-  else
-    add_reform_idle_notifier()
-  end
-  
-  --if apply_reform() took longer than 40ms, we will move processing to idle notifier next time
-  if previous_time < 0.04 then
-    idle_processing = false
-  else
-    idle_processing = true
-  end
-
-end
-
 --REPOSITION CONTROLS----------------------------------------------
 local function reposition_controls()
 
@@ -1462,6 +1348,279 @@ local function shift_tab_key()
 
 end
 
+--BINOMIAL COEFFECIENT---------------------------------
+local function binom(n,k)
+
+  if k == 0 or k == n then return 1 end
+  if k < 0 or k > n then return 0 end
+
+  if not pascals_triangle[n] then pascals_triangle[n] = {} end
+  
+  if not pascals_triangle[n][k] then
+  
+    pascals_triangle[n][k] = binom(n-1,k-1) + binom(n-1,k)    
+    
+  end
+  
+  return pascals_triangle[n][k]
+end
+
+--BERNSTEIN BASIS POLYNOMIAL---------------------------
+local function bern(val,v,n)
+
+  return binom(n,v) * (val^v) * (1 - val)^(n-v)
+
+end
+
+--GET CURVE--------------------------------------
+local function get_curve(t,points)
+  
+  local coords = {}  
+  local numerators,denominators = {0,0},{0,0} --{x,y numerators}, {x,y denominators}
+  local n = #points
+  
+  for j = 1, 2 do --run j loop once for x coords, once for y coords
+    for i,point in ipairs(points)do --sum all of the points up with bernstein blending
+      
+      numerators[j] = numerators[j] + ( bern(t,i-1,n-1) * point[j] * point[3] )
+      denominators[j] = denominators[j] + ( bern(t,i-1,n-1) * point[3] )
+      
+    end    
+    coords[j] = numerators[j]/denominators[j]    
+  end
+  
+  return coords
+end
+
+--INIT BUFFERS----------------------------
+local function init_buffers()
+
+  print("init buffers!!")
+
+  for x = 1, 16 do
+    if not curve_display.buffer1[x] then curve_display.buffer1[x] = {} end
+    if not curve_display.buffer2[x] then curve_display.buffer2[x] = {} end
+    for y = 1, 16 do
+      curve_display.buffer1[x][y] = 0
+      curve_display.buffer2[x][y] = 0
+    end
+  end
+end
+
+--CALCULATE CURVE---------------------------------
+local function calculate_curve()
+  
+  --store our buffer from last frame
+  curve_display.buffer2 = table.rcopy(curve_display.buffer1)
+  
+  --clear buffer1 to all 0's
+  for x = 1, 16 do
+    for y = 1, 16 do
+      curve_display.buffer1[x][y] = 0
+    end
+  end
+  
+  local samplesize = curve_points[curve_points.selected].samplesize
+  
+  local points 
+  if curve_intensity >= 0 then
+    points = curve_points[curve_points.selected].positive
+  else
+    points = curve_points[curve_points.selected].negative
+  end
+  
+  local intensity
+  if curve_intensity >= 0 then
+    intensity = curve_intensity
+  else
+    intensity = -curve_intensity
+  end
+  
+  --find the x,y coords for each samplesize'd-increment of t along our curve
+  for x = 1, samplesize do
+    
+    --get our t value
+    local t = (x-1) / (samplesize-1)
+    
+    local coords = get_curve(t,points)
+    
+    --interpolate between our curve, and a linear distribution, based on curve intensity
+    coords[1] = intensity * coords[1] + (1 - intensity) * (t)
+    coords[2] = intensity * coords[2] + (1 - intensity) * (1-t)
+    
+    --convert from float in 0-1 range to integer in 1-gridsize range
+    coords[1] = math.floor(coords[1] * (16-1) + 1.5)
+    
+    --convert from float in 0-1 range to integer in 1-gridsize range
+    coords[2] = math.floor(coords[2] * (16-1) + 1.5)
+    
+    if not (coords[1] < coords[1] - 1 and coords[2] < coords[2] - 1) then --nan check
+      --add this pixel into our buffer
+      print("x: " .. coords[1] .. "  y: " .. coords[2])
+      curve_display.buffer1[coords[1]][coords[2]] = 1
+    end
+  
+  end
+
+end
+
+--UPDATE CURVE DISPLAY-------------------------------
+local function update_curve_display()
+
+  if not curve_display.buffer1[1] then init_buffers() end
+  
+  calculate_curve()
+  
+  --draw our line
+  for x,column in ipairs(curve_display.display) do
+    for y,pixel in ipairs(column) do      
+      if curve_display.buffer1[x][y] ~= curve_display.buffer2[x][y] then
+      
+        pixel.bitmap = ("Bitmaps/%s.bmp"):format(curve_display.buffer1[x][y])
+        --print("x: " .. x .. "  y: " .. y .. "   " .. pixel.bitmap)
+        
+      end      
+    end
+  end
+
+  return true
+end
+
+--APPLY REFORM------------------------------------------
+local function apply_reform()
+
+resetclock(0)
+setclock(0)
+  
+  --set the clock we will use to determine if idle processing will be necessary next time
+  previous_time = os.clock()
+
+  --print("apply_reform()")
+  
+  if not valid_selection then
+    app:show_error("There is no valid selection to operate on!")
+    deactivate_controls()
+    return false
+  end
+  
+  table.clear(columns_overflowed_into)
+  table.clear(note_collisions.ours)
+  table.clear(note_collisions.wild)
+  
+  --restore everything to how it was, so we don't run into our own notes during calculations
+  for k in ipairs(selected_notes) do
+    restore_old_note(k)
+  end
+  
+  --clear our "placed_notes" table so we can lay them down one by one cleanly
+  table.clear(placed_notes)
+
+for i = 1, 9 do
+resetclock(i)
+end
+setclock(1)
+  
+  --place our notes into place one by one
+  for k in ipairs(selected_notes) do
+    place_new_note(k)
+  end
+
+--readclock(2,"clock2: ")
+--readclock(3,"find_correct_index clock: ")
+--readclock(4,"get_existing_note clock: ")
+--readclock(5,"update_current_note_location clock: ")
+--readclock(6,"set_note_column_values clock: ")
+--readclock(7,"is_wild clock: ") --removed
+--readclock(8,"storing notes clock: ")
+
+addclock(1)
+--readclock(1,"place_new_note total clock: ")
+  
+  --show delay columns and note columns...
+  --for first track
+  if is_note_track[selection.start_track] then
+    song:track(selection.start_track).delay_column_visible = true
+    set_track_visibility(selection.start_track)
+  end
+  
+  --for all middle tracks
+  if selection.end_track - selection.start_track > 1 then
+    for t = selection.start_track + 1, selection.end_track - 1 do 
+      if is_note_track[t] then     
+        --show delay column
+        song:track(t).delay_column_visible = true     
+        --update note column visibility
+        set_track_visibility(t)
+      end
+    end
+  end  
+  
+  --and for the last track
+  if is_note_track[selection.end_track] then
+    --show delay column
+    song:track(selection.end_track).delay_column_visible = true  
+    --update note column visibility
+    set_track_visibility(selection.end_track)
+  end
+  
+  --update our multiplier text
+  update_valuefields()
+  
+  --update our collision indicator bitmaps
+  update_collision_bitmaps()
+  
+  update_start_pos()
+  
+  update_curve_display()
+  
+  previous_time = os.clock() - previous_time
+  
+addclock(0)
+readclock(0,"apply_reform() total clock: ")
+  
+end
+
+--if performance becomes a problem, we use add_reform_idle_notifier() instead of apply_reform()
+--APPLY REFORM NOTIFIER----------------------------------
+local function apply_reform_notifier()
+    
+  apply_reform()
+  
+  tool.app_idle_observable:remove_notifier(apply_reform_notifier)
+  
+  if debugvars.print_notifier_trigger then print("idle notifier triggered!") end
+end
+
+--ADD REFORM IDLE NOTIFIER--------------------------------------
+local function add_reform_idle_notifier()
+  
+  
+  if not tool.app_idle_observable:has_notifier(apply_reform_notifier) then
+    tool.app_idle_observable:add_notifier(apply_reform_notifier)
+  
+    if debugvars.print_notifier_attach then print("idle notifier attached!") end
+  end
+
+end
+
+--QUEUE PROCESSING--------------------------------------
+local function queue_processing()
+
+  if not idle_processing then
+    apply_reform()
+  else
+    add_reform_idle_notifier()
+  end
+  
+  --if apply_reform() took longer than 40ms, we will move processing to idle notifier next time
+  if previous_time < 0.04 then
+    idle_processing = false
+  else
+    idle_processing = true
+  end
+
+end
+
 --SHOW WINDOW---------------------------------------------------- 
 local function show_window()
 
@@ -1473,6 +1632,25 @@ local function show_window()
     local sliders_height = 110
     local multipliers_size = 24
     local default_margin = 2
+    
+    --create the curve display
+    local curvedisplayrow = vb:row {}
+    --populate the display
+    for x = 1, 16 do       
+      curve_display.display[x] = {}
+      local column = vb:column {}
+      for y = 1, 16 do
+        --fill the column with 16 pixels
+        curve_display.display[x][17 - y] = vb:bitmap {
+          bitmap = "Bitmaps/0.bmp",
+          mode = "body_color"
+        }
+        --add each pixel by "hand" into the column from bottom to top
+        column:add_child(curve_display.display[x][17 - y])
+      end
+      --add the column into the row from left to right
+      curvedisplayrow:add_child(column)
+    end
     
     window_content = vb:column {  --our entire view will be in one big column
       id = "window_content",
@@ -1494,17 +1672,20 @@ local function show_window()
           id = "wild_notes_collisions_bitmap",
           mode = "button_color",
           bitmap = "Bitmaps/0.bmp"
-        }
-      
+        }      
       },
             
-      vb:horizontal_aligner { --aligns time/offset control groups to window width
+      vb:horizontal_aligner { --aligns time/curve/offset control groups to window width
         mode = "distribute",
         margin = default_margin,
       
         vb:column { --contains all time-related controls
           style = "panel",
           margin = default_margin,
+          
+          vb:space{
+            height = 2
+          },
           
           vb:horizontal_aligner { --aligns icon in column
             mode = "center",
@@ -1524,7 +1705,7 @@ local function show_window()
               align = "center",
               min = -256,
               max = 256,
-              value = 1,
+              value = time,
               
               --tonumber converts any typed-in user input to a number value 
               --(called only if value was typed)
@@ -1564,7 +1745,7 @@ local function show_window()
               tooltip = "Time", 
               min = -1, 
               max = 1, 
-              value = time, 
+              value = time-1, 
               width = sliders_width, 
               height = sliders_height, 
               notifier = function(value)
@@ -1602,11 +1783,106 @@ local function show_window()
             } --close rotary            
           } --close rotary aligner
         }, --close time controls column
+        
+        
+        vb:column { --contains all curve-related controls
+          style = "panel",
+          margin = default_margin,
+          
+          vb:space{
+            height = 2
+          },
+          
+          vb:horizontal_aligner { --aligns icon in column
+            mode = "center",
+            
+            curvedisplayrow
+          },
+          
+          vb:horizontal_aligner { --aligns time valuefield in column
+            mode = "center",
+            
+            vb:valuefield {
+              id = "curve_text",
+              tooltip = "Type exact curve intensity values here!",
+              align = "center",
+              min = -1,
+              max = 1,
+              value = 0,
+              
+              --tonumber converts any typed-in user input to a number value 
+              --(called only if value was typed)
+              tonumber = function(str)
+                local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
+                val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
+                if val and -1 <= val and val <= 1 then --if val is a number, and within min/max
+                  curve_intensity = val
+                  vb.views.curve_slider.value = val
+                  queue_processing()
+                end
+                return val
+              end,
+              
+              --tostring is called when field is clicked, 
+              --after tonumber is called,
+              --and after the notifier is called
+              --it converts the value to a formatted string to be displayed
+              tostring = function(value)
+                return ("%.3f"):format(value)
+              end,        
+              
+              --notifier is called whenever the value is changed
+              notifier = function(value)
+              end
+            }
+          },
+          
+          vb:horizontal_aligner { --aligns curve slider in column
+            mode = "center",
+                        
+            vb:minislider {    
+              id = "curve_slider", 
+              tooltip = "Curve", 
+              min = -1, 
+              max = 1, 
+              value = curve_intensity, 
+              width = sliders_width, 
+              height = sliders_height, 
+              notifier = function(value)
+                if vb_notifiers_on then
+                  curve_intensity = value
+                  vb.views.curve_text.value = value
+                  queue_processing()
+                end
+              end    
+            }
+          },
+            
+          vb:horizontal_aligner { --aligns time rotary in column
+            mode = "center",
+          
+            vb:bitmap { 
+              id = "curve_type_selector", 
+              height = multipliers_size,
+              tooltip = "Curve Type",
+              bitmap = "Bitmaps/curve.bmp",
+              notifier = function(value)              
+                if vb_notifiers_on then
+                
+                end
+              end 
+            } --close selector            
+          } --close selector aligner
+        }, --close curve controls column
       
     
         vb:column { --contains all offset-related controls
           style = "panel",
           margin = default_margin,
+          
+          vb:space{
+            height = 2
+          },
         
           vb:horizontal_aligner { --aligns icon in column
             mode = "center",
@@ -1944,6 +2220,7 @@ local function reform_selection()
   if result then result = show_window() end
   if result then result = activate_controls() end
   if result then result = update_valuefields() end
+  if result then result = update_curve_display() end
   if result then result = reset_view() end
 
 end
