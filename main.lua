@@ -1,6 +1,6 @@
 --Reform - main.lua--
 --DEBUG CONTROLS-------------------------------
-local debugmode = false 
+local debugmode = true 
 
 if debugmode then
   _AUTO_RELOAD_DEBUG = true
@@ -136,20 +136,26 @@ local typed_time = 1
 
 local curve_intensity = 0
 local curve_points = {
-  selected = 2,
+  selected = 1,
+  sampled = {},
+  default = {
+    points = {{0,1,1},{1,0,1}},
+    samplesize = 2
+  },
   {
     positive = {{0,1,1},{1,1,1},{1,0,1}},
     negative = {{0,1,1},{0,0,1},{1,0,1}},
-    samplesize = 32
+    samplesize = 19
   },
   {
     positive = {{0,1,1},{0.5,1,4},{0.5,0,4},{1,0,1}},
     negative = {{0,1,1},{0,0.5,4},{1,0.5,4},{1,0,1}},
-    samplesize = 54
+    samplesize = 18
   }
 }
 local pascals_triangle = {}
 local curve_display = {display = {}, buffer1 = {}, buffer2 = {}}
+local drawmode = "line"
 
 local offset = 0
 local offset_multiplier = 1
@@ -1140,6 +1146,8 @@ local function update_valuefields()
     vb.views.offset_text.value = offset * offset_multiplier
   end
   
+  if debugmode then vb.views.samplesize_text.value = curve_points[curve_points.selected].samplesize end
+  
   vb_notifiers_on = true
   
   --print("update_valuefields() end")
@@ -1372,6 +1380,11 @@ local function bern(val,v,n)
 
 end
 
+--SIGN------------------------------------
+local function sign(number)
+  return number > 0 and 1 or (number == 0 and 0 or -1)
+end
+
 --GET CURVE--------------------------------------
 local function get_curve(t,points)
   
@@ -1410,23 +1423,15 @@ end
 --CALCULATE CURVE---------------------------------
 local function calculate_curve()
   
-  --store our buffer from last frame
-  curve_display.buffer2 = table.rcopy(curve_display.buffer1)
-  
-  --clear buffer1 to all 0's
-  for x = 1, 16 do
-    for y = 1, 16 do
-      curve_display.buffer1[x][y] = 0
-    end
-  end
-  
-  local samplesize = curve_points[curve_points.selected].samplesize
+  table.clear(curve_points.sampled)
   
   local points 
-  if curve_intensity >= 0 then
+  if curve_intensity > 0 then
     points = curve_points[curve_points.selected].positive
-  else
+  elseif curve_intensity < 0 then
     points = curve_points[curve_points.selected].negative
+  else
+    points = curve_points.default.points
   end
   
   local intensity
@@ -1434,6 +1439,13 @@ local function calculate_curve()
     intensity = curve_intensity
   else
     intensity = -curve_intensity
+  end
+  
+  local samplesize = curve_points[curve_points.selected].samplesize
+  if curve_intensity ~= 0 then
+    samplesize = curve_points[curve_points.selected].samplesize
+  else
+    samplesize = curve_points.default.samplesize
   end
   
   --find the x,y coords for each samplesize'd-increment of t along our curve
@@ -1448,40 +1460,151 @@ local function calculate_curve()
     coords[1] = intensity * coords[1] + (1 - intensity) * (t)
     coords[2] = intensity * coords[2] + (1 - intensity) * (1-t)
     
-    --convert from float in 0-1 range to integer in 1-gridsize range
-    coords[1] = math.floor(coords[1] * (16-1) + 1.5)
+    --rprint(coords)
     
-    --convert from float in 0-1 range to integer in 1-gridsize range
-    coords[2] = math.floor(coords[2] * (16-1) + 1.5)
-    
-    if not (coords[1] < coords[1] - 1 and coords[2] < coords[2] - 1) then --nan check
-      --add this pixel into our buffer
-      print("x: " .. coords[1] .. "  y: " .. coords[2])
-      curve_display.buffer1[coords[1]][coords[2]] = 1
-    end
+    curve_points.sampled[x] = {coords[1],coords[2]}    
   
   end
 
 end
+
+--RASTERIZE CURVE-------------------------------------------
+local function rasterize_curve()
+
+  --store our buffer from last frame
+  curve_display.buffer2 = table.rcopy(curve_display.buffer1)
+  
+  --clear buffer1 to all 0's
+  for x = 1, 16 do
+    for y = 1, 16 do
+      curve_display.buffer1[x][y] = 0
+    end
+  end
+
+
+
+  if drawmode == "point" then
+  
+    for i = 1, #curve_points.sampled do
+    
+      local coords = {curve_points.sampled[i][1],curve_points.sampled[i][2]}
+      
+      --convert from float in 0-1 range to integer in 1-16 range
+      coords[1] = math.floor(coords[1] * (16-1) + 1.5)
+      
+      --convert from float in 0-1 range to integer in 1-16 range
+      coords[2] = math.floor(coords[2] * (16-1) + 1.5)
+      
+      if not (coords[1] < coords[1] - 1 and coords[2] < coords[2] - 1) then --nan check
+        --add this pixel into our buffer
+        curve_display.buffer1[coords[1]][coords[2]] = 1
+      end
+      
+    end
+  
+  else
+
+    for i = 1, #curve_points.sampled - 1 do
+    
+      --print(i)
+      
+      local point_a, point_b, pixel_a, pixel_b = 
+        { curve_points.sampled[i][1], curve_points.sampled[i][2] },
+        { curve_points.sampled[i+1][1], curve_points.sampled[i+1][2] },
+        {},
+        {}
+        
+        
+      --convert point_a from float in 0-1 range to float in 1-16 range
+      point_a[1] = remap_range(point_a[1],0,1,1,16)
+      point_a[2] = remap_range(point_a[2],0,1,1,16)
+      
+      --convert point_b from float in 0-1 range to float in 1-16 range
+      point_b[1] = remap_range(point_b[1],0,1,1,16)
+      point_b[2] = remap_range(point_b[2],0,1,1,16)
+        
+      --local floatslope = (point_b[2] - point_a[2]) / (point_b[1] - point_a[1]) --y/x
+          
+      --convert point_a from float to integer (pixel)
+      pixel_a[1] = math.floor(point_a[1] + 0.5)
+      pixel_a[2] = math.floor(point_a[2] + 0.5)
+      
+      --convert point_b from float to integer (pixel)
+      pixel_b[1] = math.floor(point_b[1] + 0.5)
+      pixel_b[2] = math.floor(point_b[2] + 0.5)
+      
+      --calculate the difference in our x and y coords from point b to point a
+      local diff = { pixel_b[1]-pixel_a[1] , pixel_b[2]-pixel_a[2] }
+      
+      --find out which plane we will traverse by 1 pixel each loop iteration
+      local plane
+      if math.abs(diff[1]) >= math.abs(diff[2]) then
+        --we want to traverse the x-plane
+        plane = 1
+      else
+        --we want to traverse the y-plane
+        plane = 2
+      end
+      
+      --determine if we will be moving in positive or negative direction along plane
+      local step = sign(diff[plane])
+      
+      --calculate our slope
+      local slope = step * ((plane == 1 and diff[2]/diff[1]) or diff[1]/diff[2]) --(our slope is dependent on which plane we're on)
+      
+      print("!!!!!!!!!!!!!!!!!")
+      
+      local current_coords = {pixel_a[1],pixel_a[2]}
+      local slope_acc = point_a[plane%2 + 1] - pixel_a[plane%2 + 1]
+      while(true) do
+        
+        print("slope_acc: " .. slope_acc)
+        
+        curve_display.buffer1[current_coords[1]][current_coords[2]] = 1
+        
+        if current_coords[plane] == pixel_b[plane] then break end --if we are at the end pixel, we break
+        
+        current_coords[plane] = current_coords[plane] + step
+        slope_acc = slope_acc + slope
+        current_coords[plane%2 + 1] = math.floor(pixel_a[plane%2 + 1] + slope_acc + 0.5)
+      
+      end
+      
+    end
+    
+  end
+
+end
+
+--UPDATE CURVE GRID-------------------------------
+local function update_curve_grid()
+  
+  --draw our curve
+  for x,column in ipairs(curve_display.display) do
+    for y,pixel in ipairs(column) do      
+      if curve_display.buffer1[x][y] ~= curve_display.buffer2[x][y] then
+      
+        pixel.bitmap = ("Bitmaps/%s.bmp"):format(curve_display.buffer1[x][y])
+        
+      end      
+    end
+  end
+
+end
+
 
 --UPDATE CURVE DISPLAY-------------------------------
 local function update_curve_display()
 
   if not curve_display.buffer1[1] then init_buffers() end
   
-  calculate_curve()
+  calculate_curve() --samples points on the curve and stores them
   
-  --draw our line
-  for x,column in ipairs(curve_display.display) do
-    for y,pixel in ipairs(column) do      
-      if curve_display.buffer1[x][y] ~= curve_display.buffer2[x][y] then
-      
-        pixel.bitmap = ("Bitmaps/%s.bmp"):format(curve_display.buffer1[x][y])
-        --print("x: " .. x .. "  y: " .. y .. "   " .. pixel.bitmap)
-        
-      end      
-    end
-  end
+  rasterize_curve() --interpolates sampled points, adding them to the pixel buffer
+          
+  update_curve_grid() --pushes the pixel buffer to the display
+
+
 
   return true
 end
@@ -1786,6 +1909,7 @@ local function show_window()
         
         
         vb:column { --contains all curve-related controls
+          id = "curve_column",
           style = "panel",
           margin = default_margin,
           
@@ -1828,7 +1952,7 @@ local function show_window()
               --and after the notifier is called
               --it converts the value to a formatted string to be displayed
               tostring = function(value)
-                return ("%.3f"):format(value)
+                return ("x%.2f"):format(value)
               end,        
               
               --notifier is called whenever the value is changed
@@ -1855,24 +1979,8 @@ local function show_window()
                   queue_processing()
                 end
               end    
-            }
-          },
-            
-          vb:horizontal_aligner { --aligns time rotary in column
-            mode = "center",
-          
-            vb:bitmap { 
-              id = "curve_type_selector", 
-              height = multipliers_size,
-              tooltip = "Curve Type",
-              bitmap = "Bitmaps/curve.bmp",
-              notifier = function(value)              
-                if vb_notifiers_on then
-                
-                end
-              end 
-            } --close selector            
-          } --close selector aligner
+            }          
+          } --close aligner
         }, --close curve controls column
       
     
@@ -2101,6 +2209,95 @@ local function show_window()
       } --close checkbox/switches horizontal aligner
     } --close window_content column
   end --end "if not window_content" statement
+  
+  if debugmode then
+  
+    local debugcurvecontrols = vb:column {
+      
+      vb:horizontal_aligner { --aligns in column
+        mode = "center",
+      
+        vb:switch { 
+          id = "curve_type_selector", 
+          height = 16,
+          width = 32,
+          tooltip = "Curve Type",
+          items = {"1","2"},
+          value = 1,
+          notifier = function(value)              
+            if vb_notifiers_on then
+              curve_points.selected = value
+              queue_processing()
+            end
+          end 
+        }
+      },
+        
+      vb:horizontal_aligner { --aligns in column
+        mode = "center",
+        
+        vb:switch { 
+          id = "drawing_mode", 
+          height = 16,
+          width = 32,
+          tooltip = "Drawing Mode",
+          items = {"Point","Line"},
+          value = 2,
+          notifier = function(value)              
+            if vb_notifiers_on then
+              if value == 1 then
+                drawmode = "point"
+              else
+                drawmode = "line"
+              end
+              queue_processing()
+            end
+          end 
+        }
+      },
+      
+      vb:horizontal_aligner { --aligns in column
+        mode = "center",
+        
+        vb:valuefield {
+          id = "samplesize_text",
+          tooltip = "Type exact sample size values here!",
+          align = "center",
+          min = 1,
+          max = 256,
+          value = 1,
+          
+          --tonumber converts any typed-in user input to a number value 
+          --(called only if value was typed)
+          tonumber = function(str)
+            local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
+            val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
+            if val and 1 <= val and val <= 256 then --if val is a number, and within min/max
+              curve_points[curve_points.selected].samplesize = val
+              queue_processing()
+            end
+            return val
+          end,
+          
+          --tostring is called when field is clicked, 
+          --after tonumber is called,
+          --and after the notifier is called
+          --it converts the value to a formatted string to be displayed
+          tostring = function(value)
+            return ("%i pts"):format(value)
+          end,        
+          
+          --notifier is called whenever the value is changed
+          notifier = function(value)
+          end
+        } --close view item
+      } --close aligner
+    } --close column
+    
+    vb.views.curve_column:add_child(debugcurvecontrols)
+    
+  end
+    
   
   --key handler function
   local function key_handler(dialog,key)
