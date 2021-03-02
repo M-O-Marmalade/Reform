@@ -135,8 +135,8 @@ local time_was_typed = false
 local typed_time = 1
 
 local curve_intensity = 0
+local curve_type = 1
 local curve_points = {
-  selected = 1,
   sampled = {},
   default = {
     points = {{0,1,1},{1,0,1}},
@@ -154,7 +154,7 @@ local curve_points = {
   }
 }
 local pascals_triangle = {}
-local curve_display = {display = {}, buffer1 = {}, buffer2 = {}}
+local curve_display = {xsize = 16, ysize = 16, display = {}, buffer1 = {}, buffer2 = {}}
 local drawmode = "line"
 
 local offset = 0
@@ -1025,6 +1025,34 @@ local function add_to_placed_notes(index,counter)
 
 end
 
+--APPLY CURVE-------------------------------------
+local function apply_curve(placement)
+
+  --convert our placement range from (0 - total_delay_range) to (0.0 - 0.1)
+  placement = placement / total_delay_range
+  
+  local points = {} --this will store the two points which we will interpolate between
+  
+  --find the two points
+  for k,p in ipairs(curve_points.sampled) do --iterate through our sampled points
+    if placement < p[1] then  --if our placement is less than then xcoord of the point...
+      points[2] = p  --then we have found point2...
+      break --and we can break, having found both points
+    end
+    points[1] = p --update point1 if the current point isn't point2
+  end
+  
+  print("x1: " .. points[1][1] .. "  y1: " .. points[1][2] .. "   x2: " .. points[2][1] .. "  y2: " .. points[2][2])
+   
+  --find where our placement sits between our two points
+  placement = remap_range(placement,points[1][1],points[2][1],1-points[1][2],1-points[2][2])
+  
+  --convert our placement back to a delay column value
+  placement = math.floor(placement * total_delay_range + 0.5)
+  
+  return placement
+end
+
 --PLACE NEW NOTE----------------------------------------------
 local function place_new_note(counter)
 
@@ -1061,6 +1089,9 @@ setclock(2)
   else  --otherwise, we use the original placements
     placement = selected_notes[counter].placement
   end
+  
+  --apply our curve remapping to the note if our curve intensity is not 0
+  if curve_intensity ~= 0 then placement = apply_curve(placement) end
   
   --recalculate our placements based on our new anchor
   placement = placement - anchor_to_use
@@ -1146,7 +1177,7 @@ local function update_valuefields()
     vb.views.offset_text.value = offset * offset_multiplier
   end
   
-  if debugmode then vb.views.samplesize_text.value = curve_points[curve_points.selected].samplesize end
+  if debugmode then vb.views.samplesize_text.value = curve_points[curve_type].samplesize end
   
   vb_notifiers_on = true
   
@@ -1410,10 +1441,10 @@ local function init_buffers()
 
   print("init buffers!!")
 
-  for x = 1, 16 do
+  for x = 1, curve_display.xsize do
     if not curve_display.buffer1[x] then curve_display.buffer1[x] = {} end
     if not curve_display.buffer2[x] then curve_display.buffer2[x] = {} end
-    for y = 1, 16 do
+    for y = 1, curve_display.ysize do
       curve_display.buffer1[x][y] = 0
       curve_display.buffer2[x][y] = 0
     end
@@ -1427,9 +1458,9 @@ local function calculate_curve()
   
   local points 
   if curve_intensity > 0 then
-    points = curve_points[curve_points.selected].positive
+    points = curve_points[curve_type].positive
   elseif curve_intensity < 0 then
-    points = curve_points[curve_points.selected].negative
+    points = curve_points[curve_type].negative
   else
     points = curve_points.default.points
   end
@@ -1441,9 +1472,9 @@ local function calculate_curve()
     intensity = -curve_intensity
   end
   
-  local samplesize = curve_points[curve_points.selected].samplesize
+  local samplesize = curve_points[curve_type].samplesize
   if curve_intensity ~= 0 then
-    samplesize = curve_points[curve_points.selected].samplesize
+    samplesize = curve_points[curve_type].samplesize
   else
     samplesize = curve_points.default.samplesize
   end
@@ -1475,8 +1506,8 @@ local function rasterize_curve()
   curve_display.buffer2 = table.rcopy(curve_display.buffer1)
   
   --clear buffer1 to all 0's
-  for x = 1, 16 do
-    for y = 1, 16 do
+  for x = 1, curve_display.xsize do
+    for y = 1, curve_display.ysize do
       curve_display.buffer1[x][y] = 0
     end
   end
@@ -1489,11 +1520,11 @@ local function rasterize_curve()
     
       local coords = {curve_points.sampled[i][1],curve_points.sampled[i][2]}
       
-      --convert from float in 0-1 range to integer in 1-16 range
-      coords[1] = math.floor(coords[1] * (16-1) + 1.5)
+      --convert from float in 0-1 range to integer in 1-curve_display.xsize range
+      coords[1] = math.floor(coords[1] * (curve_display.xsize-1) + 1.5)
       
-      --convert from float in 0-1 range to integer in 1-16 range
-      coords[2] = math.floor(coords[2] * (16-1) + 1.5)
+      --convert from float in 0-1 range to integer in 1-curve_display.ysize range
+      coords[2] = math.floor(coords[2] * (curve_display.ysize-1) + 1.5)
       
       if not (coords[1] < coords[1] - 1 and coords[2] < coords[2] - 1) then --nan check
         --add this pixel into our buffer
@@ -1515,13 +1546,13 @@ local function rasterize_curve()
         {}
         
         
-      --convert point_a from float in 0-1 range to float in 1-16 range
-      point_a[1] = remap_range(point_a[1],0,1,1,16)
-      point_a[2] = remap_range(point_a[2],0,1,1,16)
+      --convert point_a from float in 0-1 range to float in 1-curve_display.xsize range
+      point_a[1] = remap_range(point_a[1],0,1,1,curve_display.xsize)
+      point_a[2] = remap_range(point_a[2],0,1,1,curve_display.ysize)
       
-      --convert point_b from float in 0-1 range to float in 1-16 range
-      point_b[1] = remap_range(point_b[1],0,1,1,16)
-      point_b[2] = remap_range(point_b[2],0,1,1,16)
+      --convert point_b from float in 0-1 range to float in 1-curve_display.xsize range
+      point_b[1] = remap_range(point_b[1],0,1,1,curve_display.xsize)
+      point_b[2] = remap_range(point_b[2],0,1,1,curve_display.ysize)
         
       --local floatslope = (point_b[2] - point_a[2]) / (point_b[1] - point_a[1]) --y/x
           
@@ -1552,13 +1583,13 @@ local function rasterize_curve()
       --calculate our slope
       local slope = step * ((plane == 1 and diff[2]/diff[1]) or diff[1]/diff[2]) --(our slope is dependent on which plane we're on)
       
-      print("!!!!!!!!!!!!!!!!!")
+      --print("!!!!!!!!!!!!!!!!!")
       
       local current_coords = {pixel_a[1],pixel_a[2]}
       local slope_acc = point_a[plane%2 + 1] - pixel_a[plane%2 + 1]
       while(true) do
         
-        print("slope_acc: " .. slope_acc)
+        --print("slope_acc: " .. slope_acc)
         
         curve_display.buffer1[current_coords[1]][current_coords[2]] = 1
         
@@ -1603,8 +1634,6 @@ local function update_curve_display()
   rasterize_curve() --interpolates sampled points, adding them to the pixel buffer
           
   update_curve_grid() --pushes the pixel buffer to the display
-
-
 
   return true
 end
@@ -1686,16 +1715,16 @@ addclock(1)
     set_track_visibility(selection.end_track)
   end
   
-  --update our multiplier text
+  --update our valuefield texts
   update_valuefields()
   
   --update our collision indicator bitmaps
   update_collision_bitmaps()
   
+  --update our start position for spacebar playback
   update_start_pos()
   
-  update_curve_display()
-  
+  --record the time it took to process everything
   previous_time = os.clock() - previous_time
   
 addclock(0)
@@ -1759,17 +1788,17 @@ local function show_window()
     --create the curve display
     local curvedisplayrow = vb:row {}
     --populate the display
-    for x = 1, 16 do       
+    for x = 1, curve_display.xsize do       
       curve_display.display[x] = {}
       local column = vb:column {}
-      for y = 1, 16 do
-        --fill the column with 16 pixels
-        curve_display.display[x][17 - y] = vb:bitmap {
+      for y = 1, curve_display.ysize do
+        --fill the column with pixels
+        curve_display.display[x][curve_display.ysize+1 - y] = vb:bitmap {
           bitmap = "Bitmaps/0.bmp",
           mode = "body_color"
         }
         --add each pixel by "hand" into the column from bottom to top
-        column:add_child(curve_display.display[x][17 - y])
+        column:add_child(curve_display.display[x][curve_display.ysize+1 - y])
       end
       --add the column into the row from left to right
       curvedisplayrow:add_child(column)
@@ -1942,6 +1971,7 @@ local function show_window()
                 if val and -1 <= val and val <= 1 then --if val is a number, and within min/max
                   curve_intensity = val
                   vb.views.curve_slider.value = val
+                  update_curve_display()
                   queue_processing()
                 end
                 return val
@@ -1976,6 +2006,7 @@ local function show_window()
                 if vb_notifiers_on then
                   curve_intensity = value
                   vb.views.curve_text.value = value
+                  update_curve_display()
                   queue_processing()
                 end
               end    
@@ -2208,95 +2239,97 @@ local function show_window()
         } --close switches vertical aligner  
       } --close checkbox/switches horizontal aligner
     } --close window_content column
-  end --end "if not window_content" statement
-  
-  if debugmode then
-  
-    local debugcurvecontrols = vb:column {
-      
-      vb:horizontal_aligner { --aligns in column
-        mode = "center",
-      
-        vb:switch { 
-          id = "curve_type_selector", 
-          height = 16,
-          width = 32,
-          tooltip = "Curve Type",
-          items = {"1","2"},
-          value = 1,
-          notifier = function(value)              
-            if vb_notifiers_on then
-              curve_points.selected = value
-              queue_processing()
-            end
-          end 
-        }
-      },
+    
+    if debugmode then    
+      local debugcurvecontrols = vb:column {
         
-      vb:horizontal_aligner { --aligns in column
-        mode = "center",
+        vb:horizontal_aligner { --aligns in column
+          mode = "center",
         
-        vb:switch { 
-          id = "drawing_mode", 
-          height = 16,
-          width = 32,
-          tooltip = "Drawing Mode",
-          items = {"Point","Line"},
-          value = 2,
-          notifier = function(value)              
-            if vb_notifiers_on then
-              if value == 1 then
-                drawmode = "point"
-              else
-                drawmode = "line"
+          vb:switch { 
+            id = "curve_type_selector", 
+            height = 16,
+            width = 32,
+            tooltip = "Curve Type",
+            items = {"1","2"},
+            value = 1,
+            notifier = function(value)              
+              if vb_notifiers_on then
+                curve_type = value
+                update_curve_display()
+                queue_processing()
               end
-              queue_processing()
-            end
-          end 
-        }
-      },
-      
-      vb:horizontal_aligner { --aligns in column
-        mode = "center",
+            end 
+          }
+        },
+          
+        vb:horizontal_aligner { --aligns in column
+          mode = "center",
+          
+          vb:switch { 
+            id = "drawing_mode", 
+            height = 16,
+            width = 32,
+            tooltip = "Drawing Mode",
+            items = {"Point","Line"},
+            value = 2,
+            notifier = function(value)              
+              if vb_notifiers_on then
+                if value == 1 then
+                  drawmode = "point"
+                else
+                  drawmode = "line"
+                end
+                update_curve_display()
+                queue_processing()
+              end
+            end 
+          }
+        },
         
-        vb:valuefield {
-          id = "samplesize_text",
-          tooltip = "Type exact sample size values here!",
-          align = "center",
-          min = 1,
-          max = 256,
-          value = 1,
+        vb:horizontal_aligner { --aligns in column
+          mode = "center",
           
-          --tonumber converts any typed-in user input to a number value 
-          --(called only if value was typed)
-          tonumber = function(str)
-            local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
-            val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
-            if val and 1 <= val and val <= 256 then --if val is a number, and within min/max
-              curve_points[curve_points.selected].samplesize = val
-              queue_processing()
+          vb:valuefield {
+            id = "samplesize_text",
+            tooltip = "Type exact sample size values here!",
+            align = "center",
+            min = 1,
+            max = 256,
+            value = 1,
+            
+            --tonumber converts any typed-in user input to a number value 
+            --(called only if value was typed)
+            tonumber = function(str)
+              local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
+              val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
+              if val and 1 <= val and val <= 256 then --if val is a number, and within min/max
+                curve_points[curve_type].samplesize = val
+                update_curve_display()
+                queue_processing()
+              end
+              return val
+            end,
+            
+            --tostring is called when field is clicked, 
+            --after tonumber is called,
+            --and after the notifier is called
+            --it converts the value to a formatted string to be displayed
+            tostring = function(value)
+              return ("%i pts"):format(value)
+            end,        
+            
+            --notifier is called whenever the value is changed
+            notifier = function(value)
             end
-            return val
-          end,
-          
-          --tostring is called when field is clicked, 
-          --after tonumber is called,
-          --and after the notifier is called
-          --it converts the value to a formatted string to be displayed
-          tostring = function(value)
-            return ("%i pts"):format(value)
-          end,        
-          
-          --notifier is called whenever the value is changed
-          notifier = function(value)
-          end
-        } --close view item
-      } --close aligner
-    } --close column
-    
-    vb.views.curve_column:add_child(debugcurvecontrols)
-    
-  end
+          } --close view item
+        } --close aligner
+      } --close column
+      
+      vb.views.curve_column:add_child(debugcurvecontrols)
+      
+    end --end "if debugmode"    
+  end --end "if not window_content" statement
     
   
   --key handler function
