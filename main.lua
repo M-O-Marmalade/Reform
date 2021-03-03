@@ -1,12 +1,10 @@
 --Reform - main.lua--
---DEBUG CONTROLS-------------------------------
-local debugmode = true 
 
-if debugmode then
-  _AUTO_RELOAD_DEBUG = true
-end
+--DEBUG CONTROLS-------------------------------
+_AUTO_RELOAD_DEBUG = true
 
 local debugvars = {
+  extra_curve_controls = true,
   print_notifier_attach = false,
   print_notifier_trigger = false,
   print_valuefield = false, --prints info from valuefields when set true
@@ -1027,28 +1025,58 @@ end
 
 --APPLY CURVE-------------------------------------
 local function apply_curve(placement)
-
-  --convert our placement range from (0 - total_delay_range) to (0.0 - 0.1)
-  placement = placement / total_delay_range
+  
+  local anchors = {}
+  if anchor_type == 1 then
+    if anchor == 0 then 
+      anchors[1] = 0
+      anchors[2] = latest_placement - earliest_placement
+    else
+      anchors[1] = -(latest_placement - earliest_placement)
+      anchors[2] = 0
+    end
+  else
+    if anchor == 0 then 
+      anchors[1] = 0
+      anchors[2] = total_delay_range
+    else 
+      anchors[1] = -(total_delay_range)
+      anchors[2] = 0
+    end
+  end
+  
+  --convert our placement range from (anchor1 - anchor2) to (0.0 - 1.0)
+  placement = remap_range(placement,anchors[1],anchors[2],0,1)
   
   local points = {} --this will store the two points which we will interpolate between
   
+  --print("placement: " .. placement)
+  
+  --initialize point1
+  points[1] = curve_points.sampled[1]
+  
   --find the two points
   for k,p in ipairs(curve_points.sampled) do --iterate through our sampled points
-    if placement < p[1] then  --if our placement is less than then xcoord of the point...
+    if placement <= p[1] then  --if our placement is less than then xcoord of the point...
       points[2] = p  --then we have found point2...
       break --and we can break, having found both points
     end
     points[1] = p --update point1 if the current point isn't point2
   end
   
-  print("x1: " .. points[1][1] .. "  y1: " .. points[1][2] .. "   x2: " .. points[2][1] .. "  y2: " .. points[2][2])
+  --print("x1: " .. points[1][1] .. "  y1: " .. points[1][2])
+  --print("x2: " .. points[2][1] .. "  y2: " .. points[2][2])
    
   --find where our placement sits between our two points
   placement = remap_range(placement,points[1][1],points[2][1],1-points[1][2],1-points[2][2])
   
+  if (placement < placement - 1) then --nan check
+    --print("NAN!")
+    placement = 0
+  end
+  
   --convert our placement back to a delay column value
-  placement = math.floor(placement * total_delay_range + 0.5)
+  placement = math.floor(remap_range(placement,0,1,anchors[1],anchors[2]))
   
   return placement
 end
@@ -1090,11 +1118,18 @@ setclock(2)
     placement = selected_notes[counter].placement
   end
   
-  --apply our curve remapping to the note if our curve intensity is not 0
-  if curve_intensity ~= 0 then placement = apply_curve(placement) end
+  --print("original placement: " .. placement)
   
   --recalculate our placements based on our new anchor
   placement = placement - anchor_to_use
+  
+  --print("anchor applied placement: " .. placement)
+  
+  --apply our curve remapping to the note if our curve intensity is not 0
+  if curve_intensity ~= 0 then placement = apply_curve(placement) end
+  
+  --print("remapped placement: " .. placement)
+  --print(".................................")
   
   --apply our time and offset values to our placement value
   placement = placement * time_to_use + offset_to_use
@@ -1177,7 +1212,7 @@ local function update_valuefields()
     vb.views.offset_text.value = offset * offset_multiplier
   end
   
-  if debugmode then vb.views.samplesize_text.value = curve_points[curve_type].samplesize end
+  if debugvars.extra_curve_controls then vb.views.samplesize_text.value = curve_points[curve_type].samplesize end
   
   vb_notifiers_on = true
   
@@ -1439,7 +1474,7 @@ end
 --INIT BUFFERS----------------------------
 local function init_buffers()
 
-  print("init buffers!!")
+  --print("init buffers!!")
 
   for x = 1, curve_display.xsize do
     if not curve_display.buffer1[x] then curve_display.buffer1[x] = {} end
@@ -2240,7 +2275,7 @@ local function show_window()
       } --close checkbox/switches horizontal aligner
     } --close window_content column
     
-    if debugmode then    
+    if debugvars.extra_curve_controls then    
       local debugcurvecontrols = vb:column {
         
         vb:horizontal_aligner { --aligns in column
@@ -2328,7 +2363,7 @@ local function show_window()
       
       vb.views.curve_column:add_child(debugcurvecontrols)
       
-    end --end "if debugmode"    
+    end --end "if debugvars.extra_curve_controls"    
   end --end "if not window_content" statement
     
   
