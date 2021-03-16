@@ -46,6 +46,9 @@ local vb = renoise.ViewBuilder()
 local window_obj = nil
 local window_content = nil
 local vb_notifiers_on
+local theme = {
+  selected_button_back = {255,0,0}
+}
 
 local previous_time = 0
 local idle_processing = false --if apply_reform() takes longer than 40ms, this becomes true
@@ -118,7 +121,34 @@ local global_flags = {
   condense = false,
   redistribute = false,
   our_notes = false,
-  wild_notes = false
+  wild_notes = false,
+  
+  vol = false,
+  vol_re = false,
+  vol_orig_min = 0,
+  vol_orig_max = 128,
+  vol_min = 0,
+  vol_max = 128,
+  vol_curve = {
+    int = 0,
+    display = {xsize = 16, ysize = 16, display = {}, buffer1 = {}, buffer2 = {}},
+    sampled_points = {},
+    default = {
+      points = {{0,1,1},{1,0,1}},
+      samplesize = 2
+    },
+    
+    positive = {{0,1,1},{1,1,1},{1,0,1}},
+    negative = {{0,1,1},{0,0,1},{1,0,1}},
+    samplesize = 19
+  },  
+  
+  pan = false,
+  pan_re = false,
+  
+  fx = false,
+  fx_re = false
+  
 }
 
 local pattern_lengths = {} --[pattern_index]{length, valid, notifier}
@@ -194,11 +224,40 @@ local function reset_variables()
   earliest_placement = math.huge
   latest_placement = 0
   
-  global_flags = {   
-    overflow = true,
-    condense = false,
-    redistribute = false
-  }
+  global_flags = {
+  overflow = true,
+  condense = false,
+  redistribute = false,
+  our_notes = false,
+  wild_notes = false,
+  
+  vol = false,
+  vol_re = false,
+  vol_orig_min = 0,
+  vol_orig_max = 128,
+  vol_min = 0,
+  vol_max = 128,
+  vol_curve = {
+    int = 0,
+    display = {xsize = 16, ysize = 16, display = {}, buffer1 = {}, buffer2 = {}},
+    sampled_points = {},
+    default = {
+      points = {{0,1,1},{1,0,1}},
+      samplesize = 2
+    },
+    
+    positive = {{0,1,1},{1,1,1},{1,0,1}},
+    negative = {{0,1,1},{0,0,1},{1,0,1}},
+    samplesize = 19
+  },  
+  
+  pan = false,
+  pan_re = false,
+  
+  fx = false,
+  fx_re = false
+  
+}
   
   return true
 end
@@ -219,6 +278,12 @@ local function reset_view()
   vb.views.redistribute_flag_checkbox.value = global_flags.redistribute
   vb.views.anchor_switch.value = anchor + 1
   vb.views.anchor_type_switch.value = anchor_type
+  vb.views.vol_min_box.value = global_flags.vol_orig_min
+  vb.views.vol_max_box.value = global_flags.vol_orig_max
+  
+  vb.views.vol_column.visible = false
+  vb.views.volbutton.bitmap = "Bitmaps/volbutton.bmp"
+  vb.views.vol_re_button.color = {0,0,0}
   
   vb_notifiers_on = true
 
@@ -470,7 +535,7 @@ end
 
 --REMAP RANGE-------------------------------------------------------
 local function remap_range(val,lo1,hi1,lo2,hi2)
-
+  
   return lo2 + (hi2 - lo2) * ((val - lo1) / (hi1 - lo1))
 
 end
@@ -483,11 +548,11 @@ local function calculate_note_placements()
   total_line_range = total_delay_range / 256
   
   --calculate original note placements in our selection range for each note
-  for k in ipairs(selected_notes) do
+  for k,note in ipairs(selected_notes) do
     
-    local line_difference = selected_notes[k].original_index.l - selection.start_line 
+    local line_difference = note.original_index.l - selection.start_line 
      
-    local delay_difference = selected_notes[k].delay_value + (line_difference*256)
+    local delay_difference = note.delay_value + (line_difference*256)
       
     local note_place = delay_difference
     
@@ -502,8 +567,8 @@ local function calculate_note_placements()
   
   --calculate redistributed placements in selection range
   local amount_of_notes = #selected_notes
-  for k in ipairs(selected_notes) do
-    selected_notes[k].redistributed_placement_in_sel_range = remap_range(
+  for k,note in ipairs(selected_notes) do
+    note.redistributed_placement_in_sel_range = remap_range(
       (k - 1) / amount_of_notes,
       0,
       total_line_range / (selection.end_line - selection.start_line + 1),
@@ -512,8 +577,8 @@ local function calculate_note_placements()
   end
   
   --calculate redistributed placements in note range
-  for k in ipairs(selected_notes) do
-    selected_notes[k].redistributed_placement_in_note_range = remap_range(
+  for k,note in ipairs(selected_notes) do
+    note.redistributed_placement_in_note_range = remap_range(
       (k - 1) / (amount_of_notes - 1),
       0,
       1,
@@ -521,8 +586,21 @@ local function calculate_note_placements()
       latest_placement)
       
       --if there is only one note, we need to set it here, or it will be left as nan
-      if amount_of_notes == 1 then selected_notes[k].redistributed_placement_in_note_range = earliest_placement end
+      if amount_of_notes == 1 then note.redistributed_placement_in_note_range = earliest_placement end
   end
+  
+  local least_vol,greatest_vol = 128,0
+  --find the least and greatest volume values in selection
+  for k,note in ipairs(selected_notes) do
+    if note.volume_value > greatest_vol then greatest_vol = note.volume_value end
+    if note.volume_value < least_vol then least_vol = note.volume_value end
+  end
+  if least_vol == 255 then least_vol = 128 end
+  if greatest_vol == 255 then greatest_vol = 128 end
+  global_flags.vol_orig_min, global_flags.vol_min = least_vol, least_vol
+  global_flags.vol_orig_max, global_flags.vol_max = greatest_vol, greatest_vol
+  print("least_vol: " .. least_vol)
+  print("greatest_vol: " .. greatest_vol)
   
   return true
 end
@@ -1171,13 +1249,33 @@ addclock(5)
   
 setclock(6)
   
+  local vol_val = selected_notes[counter].volume_value
+  if vol_val == 255 then vol_val = 128 end
+  if global_flags.vol then    
+    if global_flags.vol_re then
+      vol_val = remap_range(counter, 1, #selected_notes, global_flags.vol_min, global_flags.vol_max)
+    else  --if note global_flags.vol_re
+      vol_val = remap_range(
+        vol_val,
+        global_flags.vol_orig_min,
+        global_flags.vol_orig_max,
+        global_flags.vol_min,
+        global_flags.vol_max
+      )
+    end
+  end
+  
+  print(vol_val)
+  
+  if vol_val == 128 then vol_val = 255 end
+  
   if selected_notes[counter].flags.write then
     set_note_column_values(
       column,
       {
         note_value = selected_notes[counter].note_value,
         instrument_value = selected_notes[counter].instrument_value,
-        volume_value = selected_notes[counter].volume_value,
+        volume_value = vol_val,
         panning_value = selected_notes[counter].panning_value,
         delay_value = new_delay_value,
         effect_number_value = selected_notes[counter].effect_number_value,
@@ -1808,6 +1906,48 @@ local function queue_processing()
 
 end
 
+--GET THEME DATA--------------------------------
+local function get_theme_data()
+
+  app:save_theme("Theme.xrnc")
+
+  --open/cache the file contents as a string
+  local themefile = io.open("Theme.xrnc")
+  local themestring = themefile:read("*a")
+  themefile:close()
+  
+  --find the indices where the Selected_Button_Back property begins and ends
+  local i = {}
+  i[1], i[2] = themestring:find("<Selected_Button_Back>",0,true)
+  i[3], i[4] = themestring:find("</Selected_Button_Back>",0,true)
+  
+  local stringtemp = themestring:sub(i[2]+1,i[3]-1)
+  
+  i[1], i[2] = stringtemp:find(",",0,true)
+  
+  theme.selected_button_back[1] = tonumber(stringtemp:sub(0,i[1]-1))
+  
+  --print("selected_button_back[1]: " .. theme.selected_button_back[1])
+  
+  i[2], i[3] = stringtemp:find(",",i[2]+1,true)
+  
+  theme.selected_button_back[2] = tonumber(stringtemp:sub(i[1]+1,i[2]-1))
+  
+  --print("selected_button_back[2]: " .. theme.selected_button_back[2])
+  
+  theme.selected_button_back[3] = tonumber(stringtemp:sub(i[2]+1,stringtemp:len()))
+  
+  --print("selected_button_back[3]: " .. theme.selected_button_back[3])
+
+end
+
+--SET THEME COLORS-----------------------------------------
+local function set_theme_colors()
+
+  if global_flags.vol_re then vb.views.vol_re_button.color = theme.selected_button_back end
+
+end
+
 --SHOW WINDOW---------------------------------------------------- 
 local function show_window()
 
@@ -1839,281 +1979,421 @@ local function show_window()
       curvedisplayrow:add_child(column)
     end
     
+    
     window_content = vb:column {  --our entire view will be in one big column
       id = "window_content",
-      width = 144,  --set the window's width
+      --width = 144,  --set the window's width
       
-      vb:horizontal_aligner {
-        mode = "right",
-        margin = default_margin,
+      vb:row {  --main row
+        id = "window_row",
+      
+        vb:horizontal_aligner {
+          mode = "right",
+          margin = default_margin,
+          
+          vb:bitmap {
+            tooltip = "Indicates if any notes currently being processed are colliding with other notes that are also being processed",
+            id = "our_notes_collisions_bitmap",
+            mode = "button_color",
+            bitmap = "Bitmaps/0.bmp"
+          },
+          
+          vb:bitmap {
+            tooltip = "Indicates if any notes currently being processed are colliding with non-processed notes",
+            id = "wild_notes_collisions_bitmap",
+            mode = "button_color",
+            bitmap = "Bitmaps/0.bmp"
+          }      
+        },      
+      
+        vb:column { --contains time/curve/offset columns
+                
+          vb:horizontal_aligner { --aligns time/curve/offset control groups to window width
+            mode = "distribute",
+            margin = default_margin,
+          
+            vb:column { --contains all time-related controls
+              style = "panel",
+              margin = default_margin,
+              
+              vb:space{
+                height = 2
+              },
+              
+              vb:horizontal_aligner { --aligns icon in column
+                mode = "center",
+                
+                vb:bitmap { --icon at top of time controls
+                  bitmap = "Bitmaps/clock.bmp",
+                  mode = "body_color"
+                }
+              },
+              
+              vb:horizontal_aligner { --aligns time valuefield in column
+                mode = "center",
+                
+                vb:valuefield {
+                  id = "time_text",
+                  tooltip = "Type exact time multiplication values here!",
+                  align = "center",
+                  min = -256,
+                  max = 256,
+                  value = time,
+                  
+                  --tonumber converts any typed-in user input to a number value 
+                  --(called only if value was typed)
+                  tonumber = function(str)
+                    local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
+                    val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
+                    if val and -256 <= val and val <= 256 then --if val is a number, and within min/max
+                      if debugvars.print_valuefield then print("time tonumber = " .. val) end
+                      typed_time = val
+                      time_was_typed = true                     
+                      queue_processing()
+                    end
+                    return val
+                  end,
+                  
+                  --tostring is called when field is clicked, 
+                  --after tonumber is called,
+                  --and after the notifier is called
+                  --it converts the value to a formatted string to be displayed
+                  tostring = function(value)
+                    if debugvars.print_valuefield then print(("time tostring = x%.3f"):format(value)) end
+                    return ("x%.3f"):format(value)
+                  end,        
+                  
+                  --notifier is called whenever the value is changed
+                  notifier = function(value)
+                  if debugvars.print_valuefield then print("time_text notifier") end
+                  end
+                }
+              },
+              
+              vb:horizontal_aligner { --aligns time slider in column
+                mode = "center",
+                            
+                vb:minislider {    
+                  id = "time_slider", 
+                  tooltip = "Time", 
+                  min = -1, 
+                  max = 1, 
+                  value = time-1, 
+                  width = sliders_width, 
+                  height = sliders_height, 
+                  notifier = function(value)
+                  if vb_notifiers_on then
+                      if anchor == 0 then
+                        time = -value
+                      else
+                        time = value
+                      end              
+                      time_was_typed = false
+                      queue_processing() 
+                    end
+                  end    
+                }
+              },
+                
+              vb:horizontal_aligner { --aligns time rotary in column
+                mode = "center",
+              
+                vb:rotary { 
+                  id = "time_multiplier_rotary", 
+                  tooltip = "Time Slider Range Extension", 
+                  min = 1, 
+                  max = 63, 
+                  value = time_multiplier, 
+                  width = multipliers_size, 
+                  height = multipliers_size, 
+                  notifier = function(value)              
+                    if vb_notifiers_on then
+                      time_multiplier = value
+                      time_was_typed = false
+                      queue_processing()
+                    end
+                  end 
+                } --close rotary            
+              } --close rotary aligner
+            }, --close time controls column
+            
+            
+            vb:column { --contains all curve-related controls
+              id = "curve_column",
+              style = "panel",
+              margin = default_margin,
+              
+              vb:space{
+                height = 2
+              },
+              
+              vb:horizontal_aligner { --aligns curve display in column
+                mode = "center",
+                
+                curvedisplayrow
+              },
+              
+              vb:horizontal_aligner { --aligns time valuefield in column
+                mode = "center",
+                
+                vb:valuefield {
+                  id = "curve_text",
+                  tooltip = "Type exact curve intensity values here!",
+                  align = "center",
+                  min = -1,
+                  max = 1,
+                  value = 0,
+                  
+                  --tonumber converts any typed-in user input to a number value 
+                  --(called only if value was typed)
+                  tonumber = function(str)
+                    local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
+                    val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
+                    if val and -1 <= val and val <= 1 then --if val is a number, and within min/max
+                      curve_intensity = val
+                      vb.views.curve_slider.value = val
+                      update_curve_display()
+                      queue_processing()
+                    end
+                    return val
+                  end,
+                  
+                  --tostring is called when field is clicked, 
+                  --after tonumber is called,
+                  --and after the notifier is called
+                  --it converts the value to a formatted string to be displayed
+                  tostring = function(value)
+                    return ("x%.2f"):format(value)
+                  end,        
+                  
+                  --notifier is called whenever the value is changed
+                  notifier = function(value)
+                  end
+                }
+              },
+              
+              vb:horizontal_aligner { --aligns curve slider in column
+                mode = "center",
+                            
+                vb:minislider {    
+                  id = "curve_slider", 
+                  tooltip = "Curve", 
+                  min = -1, 
+                  max = 1, 
+                  value = curve_intensity, 
+                  width = sliders_width, 
+                  height = sliders_height, 
+                  notifier = function(value)
+                    if vb_notifiers_on then
+                      curve_intensity = value
+                      vb.views.curve_text.value = value
+                      update_curve_display()
+                      queue_processing()
+                    end
+                  end    
+                }          
+              } --close aligner
+            }, --close curve controls column
+          
         
-        vb:bitmap {
-          tooltip = "Indicates if our own notes are colliding with each other",
-          id = "our_notes_collisions_bitmap",
-          mode = "button_color",
-          bitmap = "Bitmaps/0.bmp"
+            vb:column { --contains all offset-related controls
+              style = "panel",
+              margin = default_margin,
+              
+              vb:space{
+                height = 2
+              },
+            
+              vb:horizontal_aligner { --aligns icon in column
+                mode = "center",
+                
+                vb:bitmap { --icon at top of offset controls
+                  bitmap = "Bitmaps/arrows.bmp",
+                  mode = "body_color"
+                }
+              },
+            
+              vb:horizontal_aligner { --aligns offset valuefield in column
+                mode = "center",
+                
+                vb:valuefield {
+                  id = "offset_text",
+                  tooltip = "Type exact line offset values here!",
+                  align = "center",
+                  min = -256,
+                  max = 256,
+                  value = 0,
+                  
+                  --called when a value is typed in, to convert the input string to a number value
+                  tonumber = function(str)
+                    local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
+                    val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
+                    if val and -256 <= val and val <= 256 then --if val is a number, and within min/max
+                      if debugvars.print_valuefield then print("offset tonumber = " .. val) end
+                      typed_offset = val
+                      offset_was_typed = true
+                      queue_processing()
+                    end
+                    return val
+                  end,
+                  
+                  --called when field is clicked, after tonumber is called, and after the notifier is called
+                  --it converts the value to a formatted string to be displayed
+                  tostring = function(value)
+                    if debugvars.print_valuefield then print(("offset tostring = %.1f lines"):format(value)) end
+                    if value == 0 then return "0.0 lines" end           
+                    return ("%.1f lines"):format(value)
+                  end,
+                  
+                  --called whenever the value is changed
+                  notifier = function(value)
+                  if debugvars.print_valuefield then print("offset_text notifier") end
+                  end
+                }
+              },
+              
+              vb:horizontal_aligner { --aligns offset slider in column
+                mode = "center",
+              
+                vb:minislider {    
+                  id = "offset_slider", 
+                  tooltip = "Offset", 
+                  min = -1, 
+                  max = 1, 
+                  value = 0, 
+                  width = sliders_width, 
+                  height = sliders_height, 
+                  notifier = function(value)            
+                    if vb_notifiers_on then
+                      offset_was_typed = false
+                      offset = -value
+                      queue_processing()
+                    end
+                  end    
+                }
+              },
+              
+              vb:horizontal_aligner { --aligns offset rotary in column
+                mode = "center",
+              
+                vb:rotary { 
+                  id = "offset_multiplier_rotary", 
+                  tooltip = "Offset Slider Range Extension", 
+                  min = 1, 
+                  max = 63, 
+                  value = 1, 
+                  width = multipliers_size, 
+                  height = multipliers_size, 
+                  notifier = function(value)              
+                    if vb_notifiers_on then
+                      offset_was_typed = false
+                      offset_multiplier = value
+                      queue_processing()
+                    end
+                  end 
+                } --close rotary
+              } --close rotary aligner
+            } --close offset column
+          } --close time/curve/offset aligner
+        }, --close time/curve/offset column
+        
+        vb:column { --contains vol,pan,fx buttons
+          margin = default_margin,
+          
+          vb:vertical_aligner {
+            mode = "top",
+            spacing = 2,
+          
+            vb:bitmap {
+              id = "volbutton",
+              tooltip = "Volume Remapping",
+              bitmap = "Bitmaps/volbutton.bmp",
+              mode = "body_color",
+              notifier = function()
+                global_flags.vol = not global_flags.vol
+                vb.views.vol_column.visible = not vb.views.vol_column.visible
+                --vb.views.window_row:resize()
+                if global_flags.vol then vb.views.volbutton.bitmap = "Bitmaps/volbuttonpressed.bmp"
+                else vb.views.volbutton.bitmap = "Bitmaps/volbutton.bmp" end
+                queue_processing()
+              end
+            },
+            
+            vb:bitmap {
+              id = "panbutton",
+              tooltip = "Panning Remapping",
+              bitmap = "Bitmaps/panbutton.bmp",
+              mode = "body_color",
+              notifier = function()
+                
+              end
+            },
+            
+            vb:bitmap {
+              id = "fxbutton",
+              tooltip = "FX Value Remapping",
+              bitmap = "Bitmaps/fxbutton.bmp",
+              mode = "body_color",
+              notifier = function()
+                
+              end
+            }
+            
+          }
         },
         
-        vb:bitmap {
-          tooltip = "Indicates if any of our notes are colliding with wild notes",
-          id = "wild_notes_collisions_bitmap",
-          mode = "button_color",
-          bitmap = "Bitmaps/0.bmp"
-        }      
-      },
-            
-      vb:horizontal_aligner { --aligns time/curve/offset control groups to window width
-        mode = "distribute",
-        margin = default_margin,
-      
-        vb:column { --contains all time-related controls
+        vb:column { --contains all volume-related controls
+          id = "vol_column",
           style = "panel",
           margin = default_margin,
-          
-          vb:space{
-            height = 2
-          },
-          
+          visible = false,
+
           vb:horizontal_aligner { --aligns icon in column
             mode = "center",
             
-            vb:bitmap { --icon at top of time controls
-              bitmap = "Bitmaps/clock.bmp",
+            vb:bitmap { --icon at top of controls
+              bitmap = "Bitmaps/vol.bmp",
               mode = "body_color"
             }
           },
           
-          vb:horizontal_aligner { --aligns time valuefield in column
-            mode = "center",
+          vb:valuebox {
+            id = "vol_min_box",
+            tooltip = "Volume Lo",
+            width = 50,
+            height = 15,
+            min = 0,
+            max = 128,
+            value = 0,
             
-            vb:valuefield {
-              id = "time_text",
-              tooltip = "Type exact time multiplication values here!",
-              align = "center",
-              min = -256,
-              max = 256,
-              value = time,
-              
-              --tonumber converts any typed-in user input to a number value 
-              --(called only if value was typed)
-              tonumber = function(str)
-                local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
-                val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
-                if val and -256 <= val and val <= 256 then --if val is a number, and within min/max
-                  if debugvars.print_valuefield then print("time tonumber = " .. val) end
-                  typed_time = val
-                  time_was_typed = true                     
-                  queue_processing()
-                end
-                return val
-              end,
-              
-              --tostring is called when field is clicked, 
-              --after tonumber is called,
-              --and after the notifier is called
-              --it converts the value to a formatted string to be displayed
-              tostring = function(value)
-                if debugvars.print_valuefield then print(("time tostring = x%.3f"):format(value)) end
-                return ("x%.3f"):format(value)
-              end,        
-              
-              --notifier is called whenever the value is changed
-              notifier = function(value)
-              if debugvars.print_valuefield then print("time_text notifier") end
-              end
-            }
-          },
-          
-          vb:horizontal_aligner { --aligns time slider in column
-            mode = "center",
-                        
-            vb:minislider {    
-              id = "time_slider", 
-              tooltip = "Time", 
-              min = -1, 
-              max = 1, 
-              value = time-1, 
-              width = sliders_width, 
-              height = sliders_height, 
-              notifier = function(value)
+            --called when a value is typed in, to convert the input string to a number value
+            tonumber = function(str)
+              return tonumber(str, 0x10)
+            end,
+            
+            --called when field is clicked, after tonumber is called, and after the notifier is called
+            --it converts the value to a formatted string to be displayed
+            tostring = function(val)
+              return ("%.2X"):format(val)
+            end,        
+            
+            --called whenever the value is changed
+            notifier = function(val)
               if vb_notifiers_on then
-                  if anchor == 0 then
-                    time = -value
-                  else
-                    time = value
-                  end              
-                  time_was_typed = false
-                  queue_processing() 
-                end
-              end    
-            }
-          },
-            
-          vb:horizontal_aligner { --aligns time rotary in column
-            mode = "center",
-          
-            vb:rotary { 
-              id = "time_multiplier_rotary", 
-              tooltip = "Time Slider Range Extension", 
-              min = 1, 
-              max = 63, 
-              value = time_multiplier, 
-              width = multipliers_size, 
-              height = multipliers_size, 
-              notifier = function(value)              
-                if vb_notifiers_on then
-                  time_multiplier = value
-                  time_was_typed = false
-                  queue_processing()
-                end
-              end 
-            } --close rotary            
-          } --close rotary aligner
-        }, --close time controls column
-        
-        
-        vb:column { --contains all curve-related controls
-          id = "curve_column",
-          style = "panel",
-          margin = default_margin,
-          
-          vb:space{
-            height = 2
-          },
-          
-          vb:horizontal_aligner { --aligns icon in column
-            mode = "center",
-            
-            curvedisplayrow
-          },
-          
-          vb:horizontal_aligner { --aligns time valuefield in column
-            mode = "center",
-            
-            vb:valuefield {
-              id = "curve_text",
-              tooltip = "Type exact curve intensity values here!",
-              align = "center",
-              min = -1,
-              max = 1,
-              value = 0,
-              
-              --tonumber converts any typed-in user input to a number value 
-              --(called only if value was typed)
-              tonumber = function(str)
-                local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
-                val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
-                if val and -1 <= val and val <= 1 then --if val is a number, and within min/max
-                  curve_intensity = val
-                  vb.views.curve_slider.value = val
-                  update_curve_display()
-                  queue_processing()
-                end
-                return val
-              end,
-              
-              --tostring is called when field is clicked, 
-              --after tonumber is called,
-              --and after the notifier is called
-              --it converts the value to a formatted string to be displayed
-              tostring = function(value)
-                return ("x%.2f"):format(value)
-              end,        
-              
-              --notifier is called whenever the value is changed
-              notifier = function(value)
+                global_flags.vol_min = (val < 255 and val) or 255
+                queue_processing()
               end
-            }
-          },
+            end
           
-          vb:horizontal_aligner { --aligns curve slider in column
-            mode = "center",
-                        
-            vb:minislider {    
-              id = "curve_slider", 
-              tooltip = "Curve", 
-              min = -1, 
-              max = 1, 
-              value = curve_intensity, 
-              width = sliders_width, 
-              height = sliders_height, 
-              notifier = function(value)
-                if vb_notifiers_on then
-                  curve_intensity = value
-                  vb.views.curve_text.value = value
-                  update_curve_display()
-                  queue_processing()
-                end
-              end    
-            }          
-          } --close aligner
-        }, --close curve controls column
-      
-    
-        vb:column { --contains all offset-related controls
-          style = "panel",
-          margin = default_margin,
+          },   
           
-          vb:space{
-            height = 2
-          },
-        
-          vb:horizontal_aligner { --aligns icon in column
-            mode = "center",
-            
-            vb:bitmap { --icon at top of offset controls
-              bitmap = "Bitmaps/arrows.bmp",
-              mode = "body_color"
-            }
-          },
-        
-          vb:horizontal_aligner { --aligns offset valuefield in column
-            mode = "center",
-            
-            vb:valuefield {
-              id = "offset_text",
-              tooltip = "Type exact line offset values here!",
-              align = "center",
-              min = -256,
-              max = 256,
-              value = 0,
-              
-              --tonumber converts any typed-in user input to a number value 
-              --(called only if value was typed)
-              tonumber = function(str)
-                local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
-                val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
-                if val and -256 <= val and val <= 256 then --if val is a number, and within min/max
-                  if debugvars.print_valuefield then print("offset tonumber = " .. val) end
-                  typed_offset = val
-                  offset_was_typed = true
-                  queue_processing()
-                end
-                return val
-              end,
-              
-              --tostring is called when field is clicked, 
-              --after tonumber is called,
-              --and after the notifier is called
-              --it converts the value to a formatted string to be displayed
-              tostring = function(value)
-                if debugvars.print_valuefield then print(("offset tostring = %.1f lines"):format(value)) end
-                return ("%.1f lines"):format(value)
-              end,        
-              
-              --notifier is called whenever the value is changed
-              notifier = function(value)
-              if debugvars.print_valuefield then print("offset_text notifier") end
-              end
-            }
-          },
           
-          vb:horizontal_aligner { --aligns offset slider in column
+          vb:horizontal_aligner { --aligns slider in column
             mode = "center",
           
             vb:minislider {    
-              id = "offset_slider", 
-              tooltip = "Offset", 
+              id = "volume_slider", 
+              tooltip = "Volume Curve", 
               min = -1, 
               max = 1, 
               value = 0, 
@@ -2121,158 +2401,190 @@ local function show_window()
               height = sliders_height, 
               notifier = function(value)            
                 if vb_notifiers_on then
-                  offset_was_typed = false
-                  offset = -value
                   queue_processing()
                 end
               end    
             }
           },
           
-          vb:horizontal_aligner { --aligns offset rotary in column
-            mode = "center",
-          
-            vb:rotary { 
-              id = "offset_multiplier_rotary", 
-              tooltip = "Offset Slider Range Extension", 
-              min = 1, 
-              max = 63, 
-              value = 1, 
-              width = multipliers_size, 
-              height = multipliers_size, 
-              notifier = function(value)              
-                if vb_notifiers_on then
-                  offset_was_typed = false
-                  offset_multiplier = value
-                  queue_processing()
-                end
-              end 
-            } --close rotary
-          } --close rotary aligner
-        } --close offset column
-      },  --close time/offset aligner
-      
-      vb:horizontal_aligner { --aligns checkboxes and switches to window size
-        mode = "justify",
-        margin = default_margin,
-      
-        vb:column { --column containing our checkboxes
-          style = "group",
-        
-          vb:checkbox { 
-            id = "overflow_flag_checkbox", 
-            tooltip = "Overflow Mode",
-            value = global_flags.overflow, 
-            notifier = function(value)
-              if vb_notifiers_on then
-                global_flags.overflow = value
-                queue_processing()
-              end
-            end 
-          },
-          
-          vb:checkbox { 
-            id = "condense_flag_checkbox", 
-            tooltip = "Condense Mode",
-            value = global_flags.condense, 
-            notifier = function(value)
-              if vb_notifiers_on then
-                global_flags.condense = value
-                queue_processing()
-              end
-            end 
-          },
-          
-          vb:checkbox { 
-            id = "redistribute_flag_checkbox", 
-            tooltip = "Redistribute Mode",
-            value = global_flags.redistribute, 
-            notifier = function(value)
-              if vb_notifiers_on then
-                global_flags.redistribute = value
-                queue_processing()
-              end
-            end 
-          }
-        },  --close checkbox column
-        
-        vb:vertical_aligner { --aligns our switches to the bottom of the window
-          mode = "bottom",
-          margin = default_margin,
-          
-          vb:column {
-            style = "group",
-            margin = default_margin,
+          vb:valuebox {
+            id = "vol_max_box",
+            tooltip = "Volume Hi",
+            width = 50,
+            height = 15,
+            min = 0,
+            max = 128,
+            value = 128,
             
-            vb:switch {
-              width = 94,
-              id = "our_notes_flag_switch", 
-              tooltip = "In the event of our processed notes colliding with each other, which one should overwrite the other?",
-              items = {"Earlier","Later"},
-              value = 1, 
+            --called when a value is typed in, to convert the input string to a number value
+            tonumber = function(str)
+              return tonumber(str, 0x10)
+            end,
+            
+            --called when field is clicked, after tonumber is called, and after the notifier is called
+            --it converts the value to a formatted string to be displayed
+            tostring = function(val)
+              return ("%.2X"):format(val)
+            end,
+            
+            --called whenever the value is changed
+            notifier = function(val)
+              if vb_notifiers_on then
+                global_flags.vol_max = (val < 255 and val) or 255
+                queue_processing()
+              end
+            end          
+          }, --close volume valuebox
+          
+          vb:horizontal_aligner { --aligns in column
+            mode = "center",
+            
+            vb:button { --redistribute button
+              id = "vol_re_button",
+              bitmap = "Bitmaps/redistribute.bmp",
+              width = "100%",
+              notifier = function()
+                global_flags.vol_re = not global_flags.vol_re
+                if global_flags.vol_re then
+                  vb.views.vol_re_button.color = theme.selected_button_back
+                else 
+                  vb.views.vol_re_button.color = {0,0,0}
+                end
+                queue_processing()
+              end
+            }
+          }          
+        } --close volume controls column
+      }, --close row
+      
+      vb:row {
+      
+        vb:horizontal_aligner { --aligns checkboxes and switches to window size
+          mode = "justify",
+          width = 220,
+          margin = default_margin,
+        
+          vb:column { --column containing our checkboxes
+            style = "group",
+          
+            vb:checkbox { 
+              id = "overflow_flag_checkbox", 
+              tooltip = "Overflow Mode",
+              value = global_flags.overflow, 
               notifier = function(value)
                 if vb_notifiers_on then
-                  if value == 1 then global_flags.our_notes = false
-                  elseif value == 2 then global_flags.our_notes = true end
+                  global_flags.overflow = value
                   queue_processing()
                 end
               end 
             },
             
-            vb:switch {
-              width = 94,
-              id = "wild_notes_flag_switch", 
-              tooltip = "In the event of our processed notes colliding with notes outside of our selection, which one should overwrite the other?",
-              items = {"Not","Selected"},
-              value = 1, 
+            vb:checkbox { 
+              id = "condense_flag_checkbox", 
+              tooltip = "Condense Mode",
+              value = global_flags.condense, 
               notifier = function(value)
                 if vb_notifiers_on then
-                  if value == 1 then global_flags.wild_notes = false
-                  elseif value == 2 then global_flags.wild_notes = true end
+                  global_flags.condense = value
+                  queue_processing()
+                end
+              end 
+            },
+            
+            vb:checkbox { 
+              id = "redistribute_flag_checkbox", 
+              tooltip = "Redistribute Mode",
+              value = global_flags.redistribute, 
+              notifier = function(value)
+                if vb_notifiers_on then
+                  global_flags.redistribute = value
                   queue_processing()
                 end
               end 
             }
-          },
+          },  --close checkbox column
           
-          vb:horizontal_aligner {
-            mode = "right",
-          
-            vb:column { --column containing our switches
-              style = "group",
-              margin = default_margin,
+          vb:vertical_aligner { --aligns our switches to the bottom of the window
+            mode = "bottom",
+            margin = default_margin,
             
-              vb:switch {
-                id = "anchor_switch",
-                width = 64,
-                value = 1,
-                items = {"Top", "End"},
-                notifier = function(value)
-                  if vb_notifiers_on then
-                    anchor = value - 1
-                    reposition_controls()
-                    queue_processing()
-                  end
-                end
+            vb:row {
+            
+              vb:column {
+                style = "group",
+                margin = default_margin,
+                
+                vb:switch {
+                  width = 94,
+                  id = "our_notes_flag_switch", 
+                  tooltip = "In the event of our processed notes colliding with each other, which one should overwrite the other?",
+                  items = {"Earlier","Later"},
+                  value = 1, 
+                  notifier = function(value)
+                    if vb_notifiers_on then
+                      if value == 1 then global_flags.our_notes = false
+                      elseif value == 2 then global_flags.our_notes = true end
+                      queue_processing()
+                    end
+                  end 
+                },
+                
+                vb:switch {
+                  width = 94,
+                  id = "wild_notes_flag_switch", 
+                  tooltip = "In the event of our processed notes colliding with notes outside of our selection, which one should overwrite the other?",
+                  items = {"Not","Selected"},
+                  value = 1, 
+                  notifier = function(value)
+                    if vb_notifiers_on then
+                      if value == 1 then global_flags.wild_notes = false
+                      elseif value == 2 then global_flags.wild_notes = true end
+                      queue_processing()
+                    end
+                  end 
+                }
               },
+            
+              vb:horizontal_aligner {
+                mode = "right",
               
-              vb:switch {
-                id = "anchor_type_switch",
-                width = 64,
-                value = 1,
-                items = {"Note", "Select"},
-                notifier = function(value)
-                  if vb_notifiers_on then
-                    anchor_type = value
-                    update_start_pos()
-                    queue_processing()
-                  end
-                end
-              }
-            } --close switches column
-          } --close switches horizontal aligner
-        } --close switches vertical aligner  
-      } --close checkbox/switches horizontal aligner
+                vb:column { --column containing our switches
+                  style = "group",
+                  margin = default_margin,
+                
+                  vb:switch {
+                    id = "anchor_switch",
+                    width = 64,
+                    value = 1,
+                    items = {"Top", "End"},
+                    notifier = function(value)
+                      if vb_notifiers_on then
+                        anchor = value - 1
+                        reposition_controls()
+                        queue_processing()
+                      end
+                    end
+                  },
+                  
+                  vb:switch {
+                    id = "anchor_type_switch",
+                    width = 64,
+                    value = 1,
+                    items = {"Note", "Select"},
+                    notifier = function(value)
+                      if vb_notifiers_on then
+                        anchor_type = value
+                        update_start_pos()
+                        queue_processing()
+                      end
+                    end
+                  }
+                } --close switches column
+              } --close switches horizontal aligner
+            } --close switches vertical aligner
+          } --close row
+        } --close checkbox/switches horizontal aligner
+      } --close row
     } --close window_content column
     
     if debugvars.extra_curve_controls then    
@@ -2367,7 +2679,7 @@ local function show_window()
   end --end "if not window_content" statement
     
   
-  --key handler function
+  --key handler function (any unused modifiers/key states/etc will be commented out in case needed later)
   local function key_handler(dialog,key)
   
     if key.state == "pressed" then
@@ -2389,19 +2701,19 @@ local function show_window()
           if key.name == "space" then shift_space_key() end          
           if key.name == "tab" then shift_tab_key() end
         
-        elseif key.modifiers == "alt" then
+        --elseif key.modifiers == "alt" then
         
         elseif key.modifiers == "control" then
         
           if key.name == "space" then space_key() end
         
-        elseif key.modifiers == "shift + alt" then
+        --elseif key.modifiers == "shift + alt" then
         
-        elseif key.modifiers == "shift + control" then
+        --elseif key.modifiers == "shift + control" then
         
-        elseif key.modifiers == "alt + control" then
+        --elseif key.modifiers == "alt + control" then
         
-        elseif key.modifiers == "shift + alt + control" then
+        --elseif key.modifiers == "shift + alt + control" then
         
         end
       
@@ -2419,41 +2731,41 @@ local function show_window()
         
           if key.name == "tab" then shift_tab_key() end
         
-        elseif key.modifiers == "alt" then
+        --elseif key.modifiers == "alt" then
         
-        elseif key.modifiers == "control" then
+        --elseif key.modifiers == "control" then
         
-        elseif key.modifiers == "shift + alt" then
+        --elseif key.modifiers == "shift + alt" then
         
-        elseif key.modifiers == "shift + control" then
+        --elseif key.modifiers == "shift + control" then
         
-        elseif key.modifiers == "alt + control" then
+        --elseif key.modifiers == "alt + control" then
         
-        elseif key.modifiers == "shift + alt + control" then
+        --elseif key.modifiers == "shift + alt + control" then
         
         end
       
       end --end if key.repeated
       
-    elseif key.state == "released" then
+    --elseif key.state == "released" then
     
-      if key.modifiers == "" then
+      --if key.modifiers == "" then
       
-      elseif key.modifiers == "shift" then
+      --elseif key.modifiers == "shift" then
       
-      elseif key.modifiers == "alt" then
+      --elseif key.modifiers == "alt" then
       
-      elseif key.modifiers == "control" then
+      --elseif key.modifiers == "control" then
       
-      elseif key.modifiers == "shift + alt" then
+      --elseif key.modifiers == "shift + alt" then
       
-      elseif key.modifiers == "shift + control" then
+      --elseif key.modifiers == "shift + control" then
       
-      elseif key.modifiers == "alt + control" then
+      --elseif key.modifiers == "alt + control" then
       
-      elseif key.modifiers == "shift + alt + control" then
+      --elseif key.modifiers == "shift + alt + control" then
       
-      end
+      --end
       
     end --end if key.state == "pressed"/"released"
     
@@ -2464,6 +2776,10 @@ local function show_window()
     send_key_repeat = true,
     send_key_release = true
   }
+  
+  get_theme_data()
+  
+  set_theme_colors()
   
   --create the dialog if it show the dialog window
   if not window_obj or not window_obj.visible then
