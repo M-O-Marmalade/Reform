@@ -536,6 +536,7 @@ end
 --REMAP RANGE-------------------------------------------------------
 local function remap_range(val,lo1,hi1,lo2,hi2)
   
+  if lo1 == hi1 then return lo2 end
   return lo2 + (hi2 - lo2) * ((val - lo1) / (hi1 - lo1))
 
 end
@@ -592,15 +593,19 @@ local function calculate_note_placements()
   local least_vol,greatest_vol = 128,0
   --find the least and greatest volume values in selection
   for k,note in ipairs(selected_notes) do
-    if note.volume_value > greatest_vol then greatest_vol = note.volume_value end
-    if note.volume_value < least_vol then least_vol = note.volume_value end
+    if note.volume_value > greatest_vol and note.volume_value <= 255 then
+      greatest_vol = note.volume_value 
+    end
+    if note.volume_value < least_vol and note.volume_value <= 255 then
+      least_vol = note.volume_value
+    end
   end
   if least_vol == 255 then least_vol = 128 end
   if greatest_vol == 255 then greatest_vol = 128 end
   global_flags.vol_orig_min, global_flags.vol_min = least_vol, least_vol
   global_flags.vol_orig_max, global_flags.vol_max = greatest_vol, greatest_vol
-  print("least_vol: " .. least_vol)
-  print("greatest_vol: " .. greatest_vol)
+  --print("least_vol: " .. least_vol)
+  --print("greatest_vol: " .. greatest_vol)
   
   return true
 end
@@ -1251,17 +1256,19 @@ setclock(6)
   
   local vol_val = selected_notes[counter].volume_value
   if vol_val == 255 then vol_val = 128 end
-  if global_flags.vol then    
-    if global_flags.vol_re then
-      vol_val = remap_range(counter, 1, #selected_notes, global_flags.vol_min, global_flags.vol_max)
-    else  --if note global_flags.vol_re
-      vol_val = remap_range(
-        vol_val,
-        global_flags.vol_orig_min,
-        global_flags.vol_orig_max,
-        global_flags.vol_min,
-        global_flags.vol_max
-      )
+  if vol_val <= 128 then 
+    if global_flags.vol then    
+      if global_flags.vol_re then
+        vol_val = remap_range(counter, 1, #selected_notes, global_flags.vol_min, global_flags.vol_max)
+      else  --if note global_flags.vol_re
+        vol_val = remap_range(
+          vol_val,
+          global_flags.vol_orig_min,
+          global_flags.vol_orig_max,
+          global_flags.vol_min,
+          global_flags.vol_max
+        )
+      end
     end
   end
   
