@@ -4,7 +4,7 @@
 _AUTO_RELOAD_DEBUG = true
 
 local debugvars = {
-  extra_curve_controls = true,
+  extra_curve_controls = false,
   print_notifier_attach = false,
   print_notifier_trigger = false,
   print_valuefield = false, --prints info from valuefields when set true
@@ -13,25 +13,25 @@ local debugvars = {
   tempclocks = {}
 }
 
-local function resetclock(num)
+local function rstclk(num)
   if debugvars.print_clocks then
     debugvars.clocktotals[num] = 0
   end
 end
 
-local function setclock(num)
+local function stclk(num)
   if debugvars.print_clocks then
     debugvars.tempclocks[num] = os.clock()
   end
 end
 
-local function addclock(num)
+local function adclk(num)
   if debugvars.print_clocks then    
     debugvars.clocktotals[num] = debugvars.clocktotals[num] + (os.clock() - debugvars.tempclocks[num])
   end
 end
 
-local function readclock(num,msg)
+local function rdclk(num,msg)
   if debugvars.print_clocks then
     print(msg .. debugvars.clocktotals[num] or "nil")
   end 
@@ -104,7 +104,7 @@ local selection
 local valid_selection
 local selected_seq
 local selected_pattern
-local originally_visible_note_columns = {}
+local originally_visible_columns = {{},{},{},{},{}}
 local columns_overflowed_into = {}
 local column_to_end_on_in_first_track
 local is_note_track = {} --bools indicating if the track at that index supports note columns
@@ -129,19 +129,6 @@ local global_flags = {
   vol_orig_max = 128,
   vol_min = 0,
   vol_max = 128,
-  vol_curve = {
-    int = 0,
-    display = {xsize = 16, ysize = 16, display = {}, buffer1 = {}, buffer2 = {}},
-    sampled_points = {},
-    default = {
-      points = {{0,1,1},{1,0,1}},
-      samplesize = 2
-    },
-    
-    positive = {{0,1,1},{1,1,1},{1,0,1}},
-    negative = {{0,1,1},{0,0,1},{1,0,1}},
-    samplesize = 19
-  },  
   
   pan = false,
   pan_re = false,
@@ -162,27 +149,49 @@ local time_multiplier = 1
 local time_was_typed = false
 local typed_time = 1
 
-local curve_intensity = 0
-local curve_type = 1
+local curve_intensity = {0, 0, 0, 0}  --time,vol,pan,fx
+local curve_type = {1, 1, 1, 1}
 local curve_points = {
-  sampled = {},
-  default = {
-    points = {{0,1,1},{1,0,1}},
-    samplesize = 2
+  
+  { --time
+    sampled = {},
+    default = {
+      points = {{0,1,1},{1,0,1}},
+      samplesize = 2
+    },
+    {
+      positive = {{0,1,1},{1,1,1},{1,0,1}},
+      negative = {{0,1,1},{0,0,1},{1,0,1}},
+      samplesize = 19
+    },
+    {
+      positive = {{0,1,1},{0.5,1,4},{0.5,0,4},{1,0,1}},
+      negative = {{0,1,1},{0,0.5,4},{1,0.5,4},{1,0,1}},
+      samplesize = 18
+    }
   },
-  {
-    positive = {{0,1,1},{1,1,1},{1,0,1}},
-    negative = {{0,1,1},{0,0,1},{1,0,1}},
-    samplesize = 19
+  
+  { --vol
+    sampled = {},
+    default = {
+      points = {{0,0,1},{1,1,1}},
+      samplesize = 2
+    },
+    {
+      positive = {{0,0,1},{0,1,1},{1,1,1}},
+      negative = {{0,0,1},{1,0,1},{1,1,1}},
+      samplesize = 21
+    }
   },
-  {
-    positive = {{0,1,1},{0.5,1,4},{0.5,0,4},{1,0,1}},
-    negative = {{0,1,1},{0,0.5,4},{1,0.5,4},{1,0,1}},
-    samplesize = 18
-  }
+  
 }
 local pascals_triangle = {}
-local curve_display = {xsize = 16, ysize = 16, display = {}, buffer1 = {}, buffer2 = {}}
+local curve_displays = {
+  { xsize = 16, ysize = 16, display = {}, buffer1 = {}, buffer2 = {} }, --time
+  { xsize = 13, ysize = 13, display = {}, buffer1 = {}, buffer2 = {} }, --vol
+  { xsize = 8, ysize = 8, display = {}, buffer1 = {}, buffer2 = {} }, --pan
+  { xsize = 8, ysize = 8, display = {}, buffer1 = {}, buffer2 = {} }, --fx
+}
 local drawmode = "line"
 
 local offset = 0
@@ -200,7 +209,7 @@ local function reset_variables()
   --get our song reference if we don't have it yet
   if not song then song = renoise.song() end
   
-  table.clear(originally_visible_note_columns)
+  originally_visible_columns = {{},{},{},{},{}}
   table.clear(columns_overflowed_into)
   table.clear(is_note_track) 
   table.clear(selected_notes)
@@ -211,7 +220,7 @@ local function reset_variables()
   time_was_typed = false
   typed_time = 1
   
-  curve_intensity = 0
+  curve_intensity = {0,0,0,0}
   
   offset = 0
   offset_multiplier = 1
@@ -225,39 +234,25 @@ local function reset_variables()
   latest_placement = 0
   
   global_flags = {
-  overflow = true,
-  condense = false,
-  redistribute = false,
-  our_notes = false,
-  wild_notes = false,
-  
-  vol = false,
-  vol_re = false,
-  vol_orig_min = 0,
-  vol_orig_max = 128,
-  vol_min = 0,
-  vol_max = 128,
-  vol_curve = {
-    int = 0,
-    display = {xsize = 16, ysize = 16, display = {}, buffer1 = {}, buffer2 = {}},
-    sampled_points = {},
-    default = {
-      points = {{0,1,1},{1,0,1}},
-      samplesize = 2
-    },
+    overflow = true,
+    condense = false,
+    redistribute = false,
+    our_notes = false,
+    wild_notes = false,
     
-    positive = {{0,1,1},{1,1,1},{1,0,1}},
-    negative = {{0,1,1},{0,0,1},{1,0,1}},
-    samplesize = 19
-  },  
-  
-  pan = false,
-  pan_re = false,
-  
-  fx = false,
-  fx_re = false
-  
-}
+    vol = false,
+    vol_re = false,
+    vol_orig_min = 0,
+    vol_orig_max = 128,
+    vol_min = 0,
+    vol_max = 128,
+    
+    pan = false,
+    pan_re = false,
+    
+    fx = false,
+    fx_re = false  
+  }
   
   return true
 end
@@ -471,14 +466,18 @@ local function find_selected_notes()
   
   --determine which note columns are visible
   for t = selection.start_track, selection.end_track do  
-    originally_visible_note_columns[t] = song:track(t).visible_note_columns     
+    originally_visible_columns[1][t] = song:track(t).visible_note_columns
+    originally_visible_columns[2][t] = song:track(t).volume_column_visible
+    originally_visible_columns[3][t] = song:track(t).panning_column_visible
+    originally_visible_columns[4][t] = song:track(t).delay_column_visible
+    originally_visible_columns[5][t] = song:track(t).sample_effects_column_visible
   end
     
   --find out what column to end on when working in the first track, based on how many tracks are selected total
   if selection.end_track - selection.start_track == 0 then
-    column_to_end_on_in_first_track = math.min(selection.end_column, originally_visible_note_columns[selection.start_track])
+    column_to_end_on_in_first_track = math.min(selection.end_column, originally_visible_columns[1][selection.start_track])
   else
-    column_to_end_on_in_first_track = originally_visible_note_columns[selection.start_track]
+    column_to_end_on_in_first_track = originally_visible_columns[1][selection.start_track]
   end
   
   local counter = 1
@@ -500,7 +499,7 @@ local function find_selected_notes()
       for t = selection.start_track + 1, selection.end_track - 1 do
         if song:track(t).type == 1 then
           is_note_track[t] = true
-          for c = 1, originally_visible_note_columns[t] do        
+          for c = 1, originally_visible_columns[1][t] do        
             counter = store_note(selected_seq,selected_pattern,t,c,l,counter)  
           end 
         end
@@ -511,7 +510,7 @@ local function find_selected_notes()
     if selection.end_track - selection.start_track > 0 then
       if song:track(selection.end_track).type == 1  then
         is_note_track[selection.end_track] = true
-        for c = 1, math.min(selection.end_column, originally_visible_note_columns[selection.end_track]) do
+        for c = 1, math.min(selection.end_column, originally_visible_columns[1][selection.end_track]) do
           counter = store_note(selected_seq,selected_pattern,selection.end_track,c,l,counter)
         end
       end
@@ -538,7 +537,6 @@ local function remap_range(val,lo1,hi1,lo2,hi2)
   
   if lo1 == hi1 then return lo2 end
   return lo2 + (hi2 - lo2) * ((val - lo1) / (hi1 - lo1))
-
 end
 
 --CALCULATE NOTE PLACEMENTS------------------------------------------
@@ -590,8 +588,8 @@ local function calculate_note_placements()
       if amount_of_notes == 1 then note.redistributed_placement_in_note_range = earliest_placement end
   end
   
-  local least_vol,greatest_vol = 128,0
   --find the least and greatest volume values in selection
+  local least_vol,greatest_vol = 128,0  
   for k,note in ipairs(selected_notes) do
     if note.volume_value > greatest_vol and note.volume_value <= 255 then
       greatest_vol = note.volume_value 
@@ -604,8 +602,8 @@ local function calculate_note_placements()
   if greatest_vol == 255 then greatest_vol = 128 end
   global_flags.vol_orig_min, global_flags.vol_min = least_vol, least_vol
   global_flags.vol_orig_max, global_flags.vol_max = greatest_vol, greatest_vol
-  --print("least_vol: " .. least_vol)
-  --print("greatest_vol: " .. greatest_vol)
+  print("least_vol: " .. least_vol)
+  print("greatest_vol: " .. greatest_vol)
   
   return true
 end
@@ -963,10 +961,16 @@ local function set_track_visibility(t)
   
   if not columns_overflowed_into[t] then columns_overflowed_into[t] = 0 end
   
-  local columns_to_show = math.max(columns_overflowed_into[t], originally_visible_note_columns[t])
+  local columns_to_show = math.max(columns_overflowed_into[t], originally_visible_columns[1][t])
   
-  song:track(t).visible_note_columns = columns_to_show
-
+  local time_changed = (time ~= 0) or (time_was_typed and typed_time ~= 1) or (offset ~= 0) or (offset_was_typed and typed_offset ~= 0) or global_flags.redistribute
+  
+  song:track(t).visible_note_columns = columns_to_show  
+  song:track(t).volume_column_visible = global_flags.vol or originally_visible_columns[2][t]
+  song:track(t).panning_column_visible = global_flags.pan or originally_visible_columns[3][t]
+  song:track(t).delay_column_visible = time_changed or originally_visible_columns[4][t]
+  song:track(t).sample_effects_column_visible = global_flags.fx or originally_visible_columns[5][t]
+  
 end
 
 --SET NOTE COLUMN VALUES----------------------------------------------
@@ -1107,25 +1111,30 @@ local function add_to_placed_notes(index,counter)
 end
 
 --APPLY CURVE-------------------------------------
-local function apply_curve(placement)
+local function apply_curve(placement,type)
   
   local anchors = {}
-  if anchor_type == 1 then
-    if anchor == 0 then 
-      anchors[1] = 0
-      anchors[2] = latest_placement - earliest_placement
+  if type == 1 then --if we are applying the curve for time
+    if anchor_type == 1 then
+      if anchor == 0 then 
+        anchors[1] = 0
+        anchors[2] = latest_placement - earliest_placement
+      else
+        anchors[1] = -(latest_placement - earliest_placement)
+        anchors[2] = 0
+      end
     else
-      anchors[1] = -(latest_placement - earliest_placement)
-      anchors[2] = 0
+      if anchor == 0 then 
+        anchors[1] = 0
+        anchors[2] = total_delay_range
+      else 
+        anchors[1] = -(total_delay_range)
+        anchors[2] = 0
+      end
     end
-  else
-    if anchor == 0 then 
-      anchors[1] = 0
-      anchors[2] = total_delay_range
-    else 
-      anchors[1] = -(total_delay_range)
-      anchors[2] = 0
-    end
+  elseif type == 2 then --if we are applying the curve for vol
+    anchors[1] = global_flags.vol_min
+    anchors[2] = global_flags.vol_max
   end
   
   --convert our placement range from (anchor1 - anchor2) to (0.0 - 1.0)
@@ -1133,28 +1142,29 @@ local function apply_curve(placement)
   
   local points = {} --this will store the two points which we will interpolate between
   
-  --print("placement: " .. placement)
-  
   --initialize point1
-  points[1] = curve_points.sampled[1]
+  points[1] = curve_points[type].sampled[1]
   
   --find the two points
-  for k,p in ipairs(curve_points.sampled) do --iterate through our sampled points
+  for k,p in ipairs(curve_points[type].sampled) do --iterate through our sampled points
     if placement <= p[1] then  --if our placement is less than then xcoord of the point...
       points[2] = p  --then we have found point2...
       break --and we can break, having found both points
     end
     points[1] = p --update point1 if the current point isn't point2
   end
-  
-  --print("x1: " .. points[1][1] .. "  y1: " .. points[1][2])
-  --print("x2: " .. points[2][1] .. "  y2: " .. points[2][2])
    
   --find where our placement sits between our two points
-  placement = remap_range(placement,points[1][1],points[2][1],1-points[1][2],1-points[2][2])
+  placement = remap_range(
+    placement,
+    points[1][1],
+    points[2][1],
+    (type == 1 and 1 - points[1][2]) or points[1][2], --we invert if we are working with time,
+    (type == 1 and 1 - points[2][2]) or points[2][2]  --because Renoise moves top-to-bottom
+  )
   
   if (placement < placement - 1) then --nan check
-    --print("NAN!")
+    print("NAN!!!")
     placement = 0
   end
   
@@ -1167,7 +1177,7 @@ end
 --PLACE NEW NOTE----------------------------------------------
 local function place_new_note(counter)
 
-setclock(2)
+stclk(2)
 
   --decide which time value to use (typed or sliders)
   local time_to_use
@@ -1201,18 +1211,11 @@ setclock(2)
     placement = selected_notes[counter].placement
   end
   
-  --print("original placement: " .. placement)
-  
   --recalculate our placements based on our new anchor
   placement = placement - anchor_to_use
   
-  --print("anchor applied placement: " .. placement)
-  
   --apply our curve remapping to the note if our curve intensity is not 0
-  if curve_intensity ~= 0 then placement = apply_curve(placement) end
-  
-  --print("remapped placement: " .. placement)
-  --print(".................................")
+  if curve_intensity[1] ~= 0 then placement = apply_curve(placement,1) end
   
   --apply our time and offset values to our placement value
   placement = placement * time_to_use + offset_to_use
@@ -1226,8 +1229,8 @@ setclock(2)
   --update this note's rel_line_pos
   selected_notes[counter].rel_line_pos = new_line
   
-addclock(2)
-setclock(3)
+adclk(2)
+stclk(3)
   
   local index = find_correct_index(
     selected_notes[counter].original_index.s,
@@ -1238,29 +1241,34 @@ setclock(3)
   )  
   
   local column = song:pattern(index.p):track(index.t):line(index.l):note_column(index.c)
-  
-addclock(3)
-setclock(4)
+
+adclk(3)
+stclk(4)
   
   --store the note from the new spot we have moved to
   get_existing_note(index, counter)
 
-addclock(4)
-setclock(5)
+adclk(4)
+stclk(5)
   
   update_current_note_location(counter, index)
 
-addclock(5)
-  
-setclock(6)
+adclk(5)  
+stclk(6)
   
   local vol_val = selected_notes[counter].volume_value
   if vol_val == 255 then vol_val = 128 end
   if vol_val <= 128 then 
-    if global_flags.vol then    
+    if global_flags.vol then      
       if global_flags.vol_re then
-        vol_val = remap_range(counter, 1, #selected_notes, global_flags.vol_min, global_flags.vol_max)
-      else  --if note global_flags.vol_re
+        vol_val = remap_range(
+          counter,
+          1,
+          #selected_notes,
+          global_flags.vol_min,
+          global_flags.vol_max
+        )
+      else
         vol_val = remap_range(
           vol_val,
           global_flags.vol_orig_min,
@@ -1269,10 +1277,13 @@ setclock(6)
           global_flags.vol_max
         )
       end
+      
+      vol_val = apply_curve(vol_val,2)
+      
     end
   end
   
-  print(vol_val)
+  --print("vol_val: " .. vol_val)
   
   if vol_val == 128 then vol_val = 255 end
   
@@ -1291,7 +1302,7 @@ setclock(6)
     )
   end
   
-addclock(6)
+adclk(6)
   
   --add note to our placed_notes table
   add_to_placed_notes(index,counter)
@@ -1300,8 +1311,6 @@ end
 
 --UPDATE VALUEFIELDS---------------------------------
 local function update_valuefields()
-
-  --print("update_valuefields() start")
   
   vb_notifiers_on = false
   
@@ -1317,7 +1326,7 @@ local function update_valuefields()
     vb.views.offset_text.value = offset * offset_multiplier
   end
   
-  if debugvars.extra_curve_controls then vb.views.samplesize_text.value = curve_points[curve_type].samplesize end
+  if debugvars.extra_curve_controls then vb.views.samplesize_text.value = curve_points[1][curve_type[1]].samplesize end
   
   vb_notifiers_on = true
   
@@ -1547,13 +1556,13 @@ end
 --BERNSTEIN BASIS POLYNOMIAL---------------------------
 local function bern(val,v,n)
 
-  return binom(n,v) * (val^v) * (1 - val)^(n-v)
-
+  return binom(n,v) * (val^v) * (1 - val)^(n-v)  
 end
 
 --SIGN------------------------------------
 local function sign(number)
-  return number > 0 and 1 or (number == 0 and 0 or -1)
+
+  return number > 0 and 1 or (number == 0 and 0 or -1)  
 end
 
 --GET CURVE--------------------------------------
@@ -1577,46 +1586,39 @@ local function get_curve(t,points)
 end
 
 --INIT BUFFERS----------------------------
-local function init_buffers()
+local function init_buffers(i)
 
-  --print("init buffers!!")
-
-  for x = 1, curve_display.xsize do
-    if not curve_display.buffer1[x] then curve_display.buffer1[x] = {} end
-    if not curve_display.buffer2[x] then curve_display.buffer2[x] = {} end
-    for y = 1, curve_display.ysize do
-      curve_display.buffer1[x][y] = 0
-      curve_display.buffer2[x][y] = 0
+  for x = 1, curve_displays[i].xsize do
+    if not curve_displays[i].buffer1[x] then curve_displays[i].buffer1[x] = {} end
+    if not curve_displays[i].buffer2[x] then curve_displays[i].buffer2[x] = {} end
+    for y = 1, curve_displays[i].ysize do
+      curve_displays[i].buffer1[x][y] = 0
+      curve_displays[i].buffer2[x][y] = 0
     end
   end
 end
 
 --CALCULATE CURVE---------------------------------
-local function calculate_curve()
+local function calculate_curve(i)
   
-  table.clear(curve_points.sampled)
+  table.clear(curve_points[i].sampled)
   
   local points 
-  if curve_intensity > 0 then
-    points = curve_points[curve_type].positive
-  elseif curve_intensity < 0 then
-    points = curve_points[curve_type].negative
+  if curve_intensity[i] > 0 then
+    points = curve_points[i][curve_type[i]].positive
+  elseif curve_intensity[i] < 0 then
+    points = curve_points[i][curve_type[i]].negative
   else
-    points = curve_points.default.points
+    points = curve_points[i].default.points
   end
   
-  local intensity
-  if curve_intensity >= 0 then
-    intensity = curve_intensity
-  else
-    intensity = -curve_intensity
-  end
+  local intensity = math.abs(curve_intensity[i])
   
-  local samplesize = curve_points[curve_type].samplesize
-  if curve_intensity ~= 0 then
-    samplesize = curve_points[curve_type].samplesize
+  local samplesize = curve_points[i][curve_type[i]].samplesize
+  if curve_intensity[i] ~= 0 then
+    samplesize = curve_points[i][curve_type[i]].samplesize
   else
-    samplesize = curve_points.default.samplesize
+    samplesize = curve_points[i].default.samplesize
   end
   
   --find the x,y coords for each samplesize'd-increment of t along our curve
@@ -1626,73 +1628,68 @@ local function calculate_curve()
     local t = (x-1) / (samplesize-1)
     
     local coords = get_curve(t,points)
+    local linear = get_curve(t, curve_points[i].default.points)
     
     --interpolate between our curve, and a linear distribution, based on curve intensity
-    coords[1] = intensity * coords[1] + (1 - intensity) * (t)
-    coords[2] = intensity * coords[2] + (1 - intensity) * (1-t)
+    coords[1] = intensity * coords[1] + (1 - intensity) * linear[1]
+    coords[2] = intensity * coords[2] + (1 - intensity) * linear[2]
     
-    --rprint(coords)
-    
-    curve_points.sampled[x] = {coords[1],coords[2]}    
+    curve_points[i].sampled[x] = {coords[1],coords[2]}    
   
   end
 
 end
 
 --RASTERIZE CURVE-------------------------------------------
-local function rasterize_curve()
+local function rasterize_curve(i)
 
   --store our buffer from last frame
-  curve_display.buffer2 = table.rcopy(curve_display.buffer1)
+  curve_displays[i].buffer2 = table.rcopy(curve_displays[i].buffer1)
   
   --clear buffer1 to all 0's
-  for x = 1, curve_display.xsize do
-    for y = 1, curve_display.ysize do
-      curve_display.buffer1[x][y] = 0
+  for x = 1, curve_displays[i].xsize do
+    for y = 1, curve_displays[i].ysize do
+      curve_displays[i].buffer1[x][y] = 0
     end
   end
 
-
-
   if drawmode == "point" then
   
-    for i = 1, #curve_points.sampled do
+    for p = 1, #curve_points[i].sampled do
     
-      local coords = {curve_points.sampled[i][1],curve_points.sampled[i][2]}
+      local coords = {curve_points[i].sampled[p][1],curve_points[i].sampled[p][2]}
       
-      --convert from float in 0-1 range to integer in 1-curve_display.xsize range
-      coords[1] = math.floor(coords[1] * (curve_display.xsize-1) + 1.5)
+      --convert from float in 0-1 range to integer in 1-curve_displays.xsize range
+      coords[1] = math.floor(coords[1] * (curve_displays[i].xsize-1) + 1.5)
       
-      --convert from float in 0-1 range to integer in 1-curve_display.ysize range
-      coords[2] = math.floor(coords[2] * (curve_display.ysize-1) + 1.5)
+      --convert from float in 0-1 range to integer in 1-curve_displays.ysize range
+      coords[2] = math.floor(coords[2] * (curve_displays[i].ysize-1) + 1.5)
       
       if not (coords[1] < coords[1] - 1 and coords[2] < coords[2] - 1) then --nan check
         --add this pixel into our buffer
-        curve_display.buffer1[coords[1]][coords[2]] = 1
+        curve_displays[i].buffer1[coords[1]][coords[2]] = 1
       end
       
     end
   
   else
 
-    for i = 1, #curve_points.sampled - 1 do
-    
-      --print(i)
+    for p = 1, #curve_points[i].sampled - 1 do
       
       local point_a, point_b, pixel_a, pixel_b = 
-        { curve_points.sampled[i][1], curve_points.sampled[i][2] },
-        { curve_points.sampled[i+1][1], curve_points.sampled[i+1][2] },
+        { curve_points[i].sampled[p][1], curve_points[i].sampled[p][2] },
+        { curve_points[i].sampled[p+1][1], curve_points[i].sampled[p+1][2] },
         {},
         {}
         
         
-      --convert point_a from float in 0-1 range to float in 1-curve_display.xsize range
-      point_a[1] = remap_range(point_a[1],0,1,1,curve_display.xsize)
-      point_a[2] = remap_range(point_a[2],0,1,1,curve_display.ysize)
+      --convert point_a from float in 0-1 range to float in 1-curve_displays.xsize range
+      point_a[1] = remap_range(point_a[1],0,1,1,curve_displays[i].xsize)
+      point_a[2] = remap_range(point_a[2],0,1,1,curve_displays[i].ysize)
       
-      --convert point_b from float in 0-1 range to float in 1-curve_display.xsize range
-      point_b[1] = remap_range(point_b[1],0,1,1,curve_display.xsize)
-      point_b[2] = remap_range(point_b[2],0,1,1,curve_display.ysize)
+      --convert point_b from float in 0-1 range to float in 1-curve_displays.xsize range
+      point_b[1] = remap_range(point_b[1],0,1,1,curve_displays[i].xsize)
+      point_b[2] = remap_range(point_b[2],0,1,1,curve_displays[i].ysize)
         
       --local floatslope = (point_b[2] - point_a[2]) / (point_b[1] - point_a[1]) --y/x
           
@@ -1723,15 +1720,11 @@ local function rasterize_curve()
       --calculate our slope
       local slope = step * ((plane == 1 and diff[2]/diff[1]) or diff[1]/diff[2]) --(our slope is dependent on which plane we're on)
       
-      --print("!!!!!!!!!!!!!!!!!")
-      
       local current_coords = {pixel_a[1],pixel_a[2]}
       local slope_acc = point_a[plane%2 + 1] - pixel_a[plane%2 + 1]
       while(true) do
         
-        --print("slope_acc: " .. slope_acc)
-        
-        curve_display.buffer1[current_coords[1]][current_coords[2]] = 1
+        curve_displays[i].buffer1[current_coords[1]][current_coords[2]] = 1
         
         if current_coords[plane] == pixel_b[plane] then break end --if we are at the end pixel, we break
         
@@ -1739,23 +1732,21 @@ local function rasterize_curve()
         slope_acc = slope_acc + slope
         current_coords[plane%2 + 1] = math.floor(pixel_a[plane%2 + 1] + slope_acc + 0.5)
       
-      end
-      
-    end
-    
+      end      
+    end    
   end
 
 end
 
 --UPDATE CURVE GRID-------------------------------
-local function update_curve_grid()
+local function update_curve_grid(i)
   
   --draw our curve
-  for x,column in ipairs(curve_display.display) do
+  for x,column in ipairs(curve_displays[i].display) do
     for y,pixel in ipairs(column) do      
-      if curve_display.buffer1[x][y] ~= curve_display.buffer2[x][y] then
+      if curve_displays[i].buffer1[x][y] ~= curve_displays[i].buffer2[x][y] then
       
-        pixel.bitmap = ("Bitmaps/%s.bmp"):format(curve_display.buffer1[x][y])
+        pixel.bitmap = ("Bitmaps/%s.bmp"):format(curve_displays[i].buffer1[x][y])
         
       end      
     end
@@ -1765,15 +1756,26 @@ end
 
 
 --UPDATE CURVE DISPLAY-------------------------------
-local function update_curve_display()
+local function update_curve_display(i)
 
-  if not curve_display.buffer1[1] then init_buffers() end
+  if not curve_displays[i].buffer1[1] then init_buffers(i) end  --inits the buffers if needed
   
-  calculate_curve() --samples points on the curve and stores them
+  calculate_curve(i) --samples points on the curve and stores them
   
-  rasterize_curve() --interpolates sampled points, adding them to the pixel buffer
+  rasterize_curve(i) --interpolates sampled points, adding them to the pixel buffer
           
-  update_curve_grid() --pushes the pixel buffer to the display
+  update_curve_grid(i) --pushes the pixel buffer to the display
+
+  return true
+end
+
+
+--UPDATE ALL CURVE DISPLAYS-----------------------------
+local function update_all_curve_displays()
+
+  for i = 1, 2 do    
+    update_curve_display(i)
+  end
 
   return true
 end
@@ -1781,8 +1783,8 @@ end
 --APPLY REFORM------------------------------------------
 local function apply_reform()
 
-resetclock(0)
-setclock(0)
+rstclk(0)
+stclk(0)
   
   --set the clock we will use to determine if idle processing will be necessary next time
   previous_time = os.clock()
@@ -1808,40 +1810,36 @@ setclock(0)
   table.clear(placed_notes)
 
 for i = 1, 9 do
-resetclock(i)
+rstclk(i)
 end
-setclock(1)
+stclk(1)
   
   --place our notes into place one by one
   for k in ipairs(selected_notes) do
     place_new_note(k)
   end
 
---readclock(2,"clock2: ")
---readclock(3,"find_correct_index clock: ")
---readclock(4,"get_existing_note clock: ")
---readclock(5,"update_current_note_location clock: ")
---readclock(6,"set_note_column_values clock: ")
---readclock(7,"is_wild clock: ") --removed
---readclock(8,"storing notes clock: ")
+--rdclk(2,"clock2: ")
+--rdclk(3,"find_correct_index clock: ")
+--rdclk(4,"get_existing_note clock: ")
+--rdclk(5,"update_current_note_location clock: ")
+--rdclk(6,"set_note_column_values clock: ")
+--rdclk(7,"is_wild clock: ") --removed
+--rdclk(8,"storing notes clock: ")
 
-addclock(1)
---readclock(1,"place_new_note total clock: ")
+adclk(1)
+--rdclk(1,"place_new_note total clock: ")
   
-  --show delay columns and note columns...
+  --show vol,pan,dly,fx columns and note columns...
   --for first track
-  if is_note_track[selection.start_track] then
-    song:track(selection.start_track).delay_column_visible = true
+  if is_note_track[selection.start_track] then 
     set_track_visibility(selection.start_track)
   end
   
   --for all middle tracks
   if selection.end_track - selection.start_track > 1 then
     for t = selection.start_track + 1, selection.end_track - 1 do 
-      if is_note_track[t] then     
-        --show delay column
-        song:track(t).delay_column_visible = true     
-        --update note column visibility
+      if is_note_track[t] then   
         set_track_visibility(t)
       end
     end
@@ -1849,9 +1847,6 @@ addclock(1)
   
   --and for the last track
   if is_note_track[selection.end_track] then
-    --show delay column
-    song:track(selection.end_track).delay_column_visible = true  
-    --update note column visibility
     set_track_visibility(selection.end_track)
   end
   
@@ -1867,8 +1862,8 @@ addclock(1)
   --record the time it took to process everything
   previous_time = os.clock() - previous_time
   
-addclock(0)
-readclock(0,"apply_reform() total clock: ")
+adclk(0)
+rdclk(0,"apply_reform() total clock: ")
   
 end
 
@@ -1934,18 +1929,13 @@ local function get_theme_data()
   
   theme.selected_button_back[1] = tonumber(stringtemp:sub(0,i[1]-1))
   
-  --print("selected_button_back[1]: " .. theme.selected_button_back[1])
-  
   i[2], i[3] = stringtemp:find(",",i[2]+1,true)
   
   theme.selected_button_back[2] = tonumber(stringtemp:sub(i[1]+1,i[2]-1))
   
-  --print("selected_button_back[2]: " .. theme.selected_button_back[2])
-  
   theme.selected_button_back[3] = tonumber(stringtemp:sub(i[2]+1,stringtemp:len()))
-  
-  --print("selected_button_back[3]: " .. theme.selected_button_back[3])
 
+  return true
 end
 
 --SET THEME COLORS-----------------------------------------
@@ -1967,23 +1957,26 @@ local function show_window()
     local multipliers_size = 24
     local default_margin = 2
     
-    --create the curve display
-    local curvedisplayrow = vb:row {}
-    --populate the display
-    for x = 1, curve_display.xsize do       
-      curve_display.display[x] = {}
-      local column = vb:column {}
-      for y = 1, curve_display.ysize do
-        --fill the column with pixels
-        curve_display.display[x][curve_display.ysize+1 - y] = vb:bitmap {
-          bitmap = "Bitmaps/0.bmp",
-          mode = "body_color"
-        }
-        --add each pixel by "hand" into the column from bottom to top
-        column:add_child(curve_display.display[x][curve_display.ysize+1 - y])
+    --create the curve displays
+    local curvedisplayrow = {}
+    for i = 1, 4 do
+      curvedisplayrow[i] = vb:row {}
+      --populate the display
+      for x = 1, curve_displays[i].xsize do       
+        curve_displays[i].display[x] = {}
+        local column = vb:column {}
+        for y = 1, curve_displays[i].ysize do
+          --fill the column with pixels
+          curve_displays[i].display[x][curve_displays[i].ysize+1 - y] = vb:bitmap {
+            bitmap = "Bitmaps/0.bmp",
+            mode = "body_color"
+          }
+          --add each pixel by "hand" into the column from bottom to top
+          column:add_child(curve_displays[i].display[x][curve_displays[i].ysize+1 - y])
+        end
+        --add the column into the row from left to right
+        curvedisplayrow[i]:add_child(column)
       end
-      --add the column into the row from left to right
-      curvedisplayrow:add_child(column)
     end
     
     
@@ -2136,8 +2129,22 @@ local function show_window()
               
               vb:horizontal_aligner { --aligns curve display in column
                 mode = "center",
+                --spacing = -22,
                 
-                curvedisplayrow
+                --vb:column{
+                  --margin = 3,
+                  curvedisplayrow[1]
+                --},
+                
+                --[[vb:bitmap {
+                  bitmap = "Bitmaps/curvebutton.bmp",
+                  mode = "body_color",
+                  notifier = function()
+                    curve_type[1] = curve_type[1] % 2 + 1
+                    update_curve_display(1)
+                    queue_processing()
+                  end
+                }--]]
               },
               
               vb:horizontal_aligner { --aligns time valuefield in column
@@ -2157,9 +2164,9 @@ local function show_window()
                     local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
                     val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
                     if val and -1 <= val and val <= 1 then --if val is a number, and within min/max
-                      curve_intensity = val
+                      curve_intensity[1] = val
                       vb.views.curve_slider.value = val
-                      update_curve_display()
+                      update_curve_display(1)
                       queue_processing()
                     end
                     return val
@@ -2187,19 +2194,48 @@ local function show_window()
                   tooltip = "Curve", 
                   min = -1, 
                   max = 1, 
-                  value = curve_intensity, 
+                  value = curve_intensity[1], 
                   width = sliders_width, 
                   height = sliders_height, 
                   notifier = function(value)
                     if vb_notifiers_on then
-                      curve_intensity = value
+                      curve_intensity[1] = value
                       vb.views.curve_text.value = value
-                      update_curve_display()
+                      update_curve_display(1)
                       queue_processing()
                     end
                   end    
                 }          
-              } --close aligner
+              },
+              
+              vb:horizontal_aligner {
+                mode = "center",
+                
+                vb:bitmap {
+                  id = "curve_type_1",
+                  bitmap = "Bitmaps/curve1.bmp",
+                  mode = "button_color",
+                  notifier = function()
+                    vb.views.curve_type_1.bitmap = "Bitmaps/curve1pressed.bmp"
+                    vb.views.curve_type_2.bitmap = "Bitmaps/curve2.bmp"
+                    curve_type[1] = 1
+                    update_curve_display(1)
+                    queue_processing()
+                  end
+                },
+                vb:bitmap {
+                  id = "curve_type_2",
+                  bitmap = "Bitmaps/curve2.bmp",
+                  mode = "button_color",
+                  notifier = function()
+                    vb.views.curve_type_1.bitmap = "Bitmaps/curve1.bmp"
+                    vb.views.curve_type_2.bitmap = "Bitmaps/curve2pressed.bmp"
+                    curve_type[1] = 2
+                    update_curve_display(1)
+                    queue_processing()
+                  end
+                },
+              }              
             }, --close curve controls column
           
         
@@ -2315,11 +2351,10 @@ local function show_window()
               id = "volbutton",
               tooltip = "Volume Remapping",
               bitmap = "Bitmaps/volbutton.bmp",
-              mode = "body_color",
+              mode = "button_color",
               notifier = function()
                 global_flags.vol = not global_flags.vol
-                vb.views.vol_column.visible = not vb.views.vol_column.visible
-                --vb.views.window_row:resize()
+                vb.views.vol_column.visible = global_flags.vol
                 if global_flags.vol then vb.views.volbutton.bitmap = "Bitmaps/volbuttonpressed.bmp"
                 else vb.views.volbutton.bitmap = "Bitmaps/volbutton.bmp" end
                 queue_processing()
@@ -2330,7 +2365,7 @@ local function show_window()
               id = "panbutton",
               tooltip = "Panning Remapping",
               bitmap = "Bitmaps/panbutton.bmp",
-              mode = "body_color",
+              mode = "button_color",
               notifier = function()
                 
               end
@@ -2340,7 +2375,7 @@ local function show_window()
               id = "fxbutton",
               tooltip = "FX Value Remapping",
               bitmap = "Bitmaps/fxbutton.bmp",
-              mode = "body_color",
+              mode = "button_color",
               notifier = function()
                 
               end
@@ -2361,56 +2396,6 @@ local function show_window()
             vb:bitmap { --icon at top of controls
               bitmap = "Bitmaps/vol.bmp",
               mode = "body_color"
-            }
-          },
-          
-          vb:valuebox {
-            id = "vol_min_box",
-            tooltip = "Volume Lo",
-            width = 50,
-            height = 15,
-            min = 0,
-            max = 128,
-            value = 0,
-            
-            --called when a value is typed in, to convert the input string to a number value
-            tonumber = function(str)
-              return tonumber(str, 0x10)
-            end,
-            
-            --called when field is clicked, after tonumber is called, and after the notifier is called
-            --it converts the value to a formatted string to be displayed
-            tostring = function(val)
-              return ("%.2X"):format(val)
-            end,        
-            
-            --called whenever the value is changed
-            notifier = function(val)
-              if vb_notifiers_on then
-                global_flags.vol_min = (val < 255 and val) or 255
-                queue_processing()
-              end
-            end
-          
-          },   
-          
-          
-          vb:horizontal_aligner { --aligns slider in column
-            mode = "center",
-          
-            vb:minislider {    
-              id = "volume_slider", 
-              tooltip = "Volume Curve", 
-              min = -1, 
-              max = 1, 
-              value = 0, 
-              width = sliders_width, 
-              height = sliders_height, 
-              notifier = function(value)            
-                if vb_notifiers_on then
-                  queue_processing()
-                end
-              end    
             }
           },
           
@@ -2443,11 +2428,76 @@ local function show_window()
             end          
           }, --close volume valuebox
           
+          vb:horizontal_aligner {
+            mode = "distribute",
+          
+            vb:column { --contains volume slider and volume curve display
+            
+              vb:horizontal_aligner {
+                mode = "center",
+                
+                curvedisplayrow[2]
+              },
+            
+              vb:horizontal_aligner { --aligns slider in column
+                mode = "center",
+              
+                vb:minislider {    
+                  id = "volume_slider", 
+                  tooltip = "Volume Curve", 
+                  min = -1, 
+                  max = 1, 
+                  value = curve_intensity[2], 
+                  width = sliders_width, 
+                  height = sliders_height, 
+                  notifier = function(value)            
+                    if vb_notifiers_on then
+                      curve_intensity[2] = value
+                      update_curve_display(2)
+                      queue_processing()
+                    end
+                  end    
+                }
+              }
+            }
+          },
+          
+          vb:valuebox {
+            id = "vol_min_box",
+            tooltip = "Volume Lo",
+            width = 50,
+            height = 15,
+            min = 0,
+            max = 128,
+            value = 0,
+            
+            --called when a value is typed in, to convert the input string to a number value
+            tonumber = function(str)
+              return tonumber(str, 0x10)
+            end,
+            
+            --called when field is clicked, after tonumber is called, and after the notifier is called
+            --it converts the value to a formatted string to be displayed
+            tostring = function(val)
+              return ("%.2X"):format(val)
+            end,        
+            
+            --called whenever the value is changed
+            notifier = function(val)
+              if vb_notifiers_on then
+                global_flags.vol_min = (val < 255 and val) or 255
+                queue_processing()
+              end
+            end
+          
+          },
+          
           vb:horizontal_aligner { --aligns in column
             mode = "center",
             
             vb:button { --redistribute button
               id = "vol_re_button",
+              tooltip = "Distribute Volume Evenly throughout selection",
               bitmap = "Bitmaps/redistribute.bmp",
               width = "100%",
               notifier = function()
@@ -2609,8 +2659,8 @@ local function show_window()
             value = 1,
             notifier = function(value)              
               if vb_notifiers_on then
-                curve_type = value
-                update_curve_display()
+                curve_type[1] = value
+                update_curve_display(1)
                 queue_processing()
               end
             end 
@@ -2634,7 +2684,7 @@ local function show_window()
                 else
                   drawmode = "line"
                 end
-                update_curve_display()
+                update_all_curve_displays()
                 queue_processing()
               end
             end 
@@ -2658,8 +2708,8 @@ local function show_window()
               local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
               val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
               if val and 1 <= val and val <= 256 then --if val is a number, and within min/max
-                curve_points[curve_type].samplesize = val
-                update_curve_display()
+                curve_points[1][curve_type[1]].samplesize = val
+                update_curve_display(1)
                 queue_processing()
               end
               return val
@@ -2805,10 +2855,11 @@ local function reform_selection()
   if result then result = find_selected_notes() end
   if result then result = calculate_note_placements() end
   if result then result = update_start_pos() end
+  if result then result = get_theme_data() end
   if result then result = show_window() end
   if result then result = activate_controls() end
   if result then result = update_valuefields() end
-  if result then result = update_curve_display() end
+  if result then result = update_all_curve_displays() end
   if result then result = reset_view() end
 
 end
@@ -2816,10 +2867,8 @@ end
 --RESTORE REFORM WINDOW----------------------------------------------------
 local function restore_reform_window()
 
-  if valid_selection then
-    show_window()
-  end
-
+  if valid_selection then show_window() end
+  
 end
 
 --MENU/HOTKEY ENTRIES-------------------------------------------------------------------------------- 
