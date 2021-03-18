@@ -7,6 +7,7 @@ local debugvars = {
   extra_curve_controls = false,
   print_notifier_attach = false,
   print_notifier_trigger = false,
+  print_queue_processing = false,
   print_valuefield = false, --prints info from valuefields when set true
   print_clocks = false, --prints out profiling clocks in different parts of the code when set true
   clocktotals = {},
@@ -46,6 +47,7 @@ local vb = renoise.ViewBuilder()
 local window_obj = nil
 local window_content = nil
 local vb_notifiers_on
+local last_spacebar = 0
 local theme = {
   selected_button_back = {255,0,0}
 }
@@ -132,10 +134,17 @@ local global_flags = {
   
   pan = false,
   pan_re = false,
+  pan_orig_min = 0,
+  pan_orig_max = 128,
+  pan_min = 0,
+  pan_max = 128,
   
   fx = false,
-  fx_re = false
-  
+  fx_re = false,
+  fx_orig_min = 0,
+  fx_orig_max = 255,
+  fx_min = 0,
+  fx_max = 255,  
 }
 
 local pattern_lengths = {} --[pattern_index]{length, valid, notifier}
@@ -180,7 +189,33 @@ local curve_points = {
     {
       positive = {{0,0,1},{0,1,1},{1,1,1}},
       negative = {{0,0,1},{1,0,1},{1,1,1}},
-      samplesize = 21
+      samplesize = 10
+    }
+  },
+  
+  { --pan
+    sampled = {},
+    default = {
+      points = {{0,0,1},{1,1,1}},
+      samplesize = 2
+    },
+    {
+      positive = {{0,0,1},{0,1,1},{1,1,1}},
+      negative = {{0,0,1},{1,0,1},{1,1,1}},
+      samplesize = 10
+    }
+  },
+  
+    { --fx
+    sampled = {},
+    default = {
+      points = {{0,0,1},{1,1,1}},
+      samplesize = 2
+    },
+    {
+      positive = {{0,0,1},{0,1,1},{1,1,1}},
+      negative = {{0,0,1},{1,0,1},{1,1,1}},
+      samplesize = 10
     }
   },
   
@@ -188,9 +223,9 @@ local curve_points = {
 local pascals_triangle = {}
 local curve_displays = {
   { xsize = 16, ysize = 16, display = {}, buffer1 = {}, buffer2 = {} }, --time
-  { xsize = 13, ysize = 13, display = {}, buffer1 = {}, buffer2 = {} }, --vol
-  { xsize = 8, ysize = 8, display = {}, buffer1 = {}, buffer2 = {} }, --pan
-  { xsize = 8, ysize = 8, display = {}, buffer1 = {}, buffer2 = {} }, --fx
+  { xsize = 11, ysize = 11, display = {}, buffer1 = {}, buffer2 = {} }, --vol
+  { xsize = 11, ysize = 11, display = {}, buffer1 = {}, buffer2 = {} }, --pan
+  { xsize = 11, ysize = 11, display = {}, buffer1 = {}, buffer2 = {} }, --fx
 }
 local drawmode = "line"
 
@@ -249,9 +284,17 @@ local function reset_variables()
     
     pan = false,
     pan_re = false,
+    pan_orig_min = 0,
+    pan_orig_max = 128,
+    pan_min = 0,
+    pan_max = 128,
     
     fx = false,
-    fx_re = false  
+    fx_re = false,
+    fx_orig_min = 0,
+    fx_orig_max = 255,
+    fx_min = 0,
+    fx_max = 255,  
   }
   
   return true
@@ -275,6 +318,10 @@ local function reset_view()
   vb.views.anchor_type_switch.value = anchor_type
   vb.views.vol_min_box.value = global_flags.vol_orig_min
   vb.views.vol_max_box.value = global_flags.vol_orig_max
+  vb.views.pan_min_box.value = global_flags.pan_orig_min
+  vb.views.pan_max_box.value = global_flags.pan_orig_max
+  vb.views.fx_min_box.value = global_flags.fx_orig_min
+  vb.views.fx_max_box.value = global_flags.fx_orig_max
   
   vb.views.vol_column.visible = false
   vb.views.volbutton.bitmap = "Bitmaps/volbutton.bmp"
@@ -602,8 +649,44 @@ local function calculate_note_placements()
   if greatest_vol == 255 then greatest_vol = 128 end
   global_flags.vol_orig_min, global_flags.vol_min = least_vol, least_vol
   global_flags.vol_orig_max, global_flags.vol_max = greatest_vol, greatest_vol
-  print("least_vol: " .. least_vol)
-  print("greatest_vol: " .. greatest_vol)
+  --print("least_vol: " .. least_vol)
+  --print("greatest_vol: " .. greatest_vol)
+  
+  --find the least and greatest panning values in selection
+  local least_pan,greatest_pan = 128,0  
+  for k,note in ipairs(selected_notes) do    
+    local pan_val = note.panning_value
+    
+    if pan_val == 255 then pan_val = 64 end
+    
+    if pan_val > greatest_pan and pan_val <= 128 then
+      greatest_pan = pan_val
+    end
+    if pan_val < least_pan and pan_val <= 128 then
+      least_pan = pan_val
+    end
+  end
+  global_flags.pan_orig_min, global_flags.pan_min = least_pan, least_pan
+  global_flags.pan_orig_max, global_flags.pan_max = greatest_pan, greatest_pan
+  --print("least_pan: " .. least_pan)
+  --print("greatest_pan: " .. greatest_pan)
+  
+    --find the least and greatest fx values in selection
+  local least_fx,greatest_fx = 255,0  
+  for k,note in ipairs(selected_notes) do    
+    local fx_val = note.effect_amount_value
+    
+    if fx_val > greatest_fx and fx_val <= 255 then
+      greatest_fx = fx_val
+    end
+    if fx_val < least_fx and fx_val <= 255 then
+      least_fx = fx_val
+    end
+  end
+  global_flags.fx_orig_min, global_flags.fx_min = least_fx, least_fx
+  global_flags.fx_orig_max, global_flags.fx_max = greatest_fx, greatest_fx
+  --print("least_fx: " .. least_fx)
+  --print("greatest_fx: " .. greatest_fx)
   
   return true
 end
@@ -1135,6 +1218,12 @@ local function apply_curve(placement,type)
   elseif type == 2 then --if we are applying the curve for vol
     anchors[1] = global_flags.vol_min
     anchors[2] = global_flags.vol_max
+  elseif type == 3 then --if we are applying the curve for pan
+    anchors[1] = global_flags.pan_min
+    anchors[2] = global_flags.pan_max
+  elseif type == 4 then --if we are applying the curve for fx
+    anchors[1] = global_flags.fx_min
+    anchors[2] = global_flags.fx_max
   end
   
   --convert our placement range from (anchor1 - anchor2) to (0.0 - 1.0)
@@ -1287,6 +1376,65 @@ stclk(6)
   
   if vol_val == 128 then vol_val = 255 end
   
+  local pan_val = selected_notes[counter].panning_value
+  if pan_val == 255 then pan_val = 128 end
+  if pan_val <= 128 then 
+    if global_flags.pan then      
+      if global_flags.pan_re then
+        pan_val = remap_range(
+          counter,
+          1,
+          #selected_notes,
+          global_flags.pan_min,
+          global_flags.pan_max
+        )
+      else
+        pan_val = remap_range(
+          pan_val,
+          global_flags.pan_orig_min,
+          global_flags.pan_orig_max,
+          global_flags.pan_min,
+          global_flags.pan_max
+        )
+      end
+      
+      pan_val = apply_curve(pan_val,3)
+      
+    end
+  end
+  
+  --print("pan_val: " .. pan_val)
+  
+  if pan_val == 64 then pan_val = 255 end
+  
+  local fx_val = selected_notes[counter].effect_amount_value
+  if fx_val <= 255 then 
+    if global_flags.fx then      
+      if global_flags.fx_re then
+        fx_val = remap_range(
+          counter,
+          1,
+          #selected_notes,
+          global_flags.fx_min,
+          global_flags.fx_max
+        )
+      else
+        fx_val = remap_range(
+          fx_val,
+          global_flags.fx_orig_min,
+          global_flags.fx_orig_max,
+          global_flags.fx_min,
+          global_flags.fx_max
+        )
+      end
+      
+      fx_val = apply_curve(fx_val,4)
+      
+    end
+  end
+  
+  --print("fx_val: " .. fx_val)
+  
   if selected_notes[counter].flags.write then
     set_note_column_values(
       column,
@@ -1294,10 +1442,10 @@ stclk(6)
         note_value = selected_notes[counter].note_value,
         instrument_value = selected_notes[counter].instrument_value,
         volume_value = vol_val,
-        panning_value = selected_notes[counter].panning_value,
+        panning_value = pan_val,
         delay_value = new_delay_value,
         effect_number_value = selected_notes[counter].effect_number_value,
-        effect_amount_value = selected_notes[counter].effect_amount_value
+        effect_amount_value = fx_val
       }  
     )
   end
@@ -1351,8 +1499,8 @@ local function update_collision_bitmaps()
   if our_collisions then our_collisions = 1 else our_collisions = 0 end
   if wild_collisions then wild_collisions = 1 else wild_collisions = 0 end
 
-  vb.views.our_notes_collisions_bitmap.bitmap = ("Bitmaps/%i.bmp"):format(our_collisions)
-  vb.views.wild_notes_collisions_bitmap.bitmap = ("Bitmaps/%i.bmp"):format(wild_collisions)
+  vb.views.our_notes_collisions_bitmap.bitmap = ("Bitmaps/led%i.bmp"):format(our_collisions)
+  vb.views.wild_notes_collisions_bitmap.bitmap = ("Bitmaps/led%i.bmp"):format(wild_collisions)
 
 end
 
@@ -1386,24 +1534,32 @@ end
 
 --SPACE KEY-----------------------------------
 local function space_key()
-
-  if not song.transport.playing then
-    song.transport:start_at(start_pos) 
-  else
-    song.transport:stop()
+  
+  if os.clock() - last_spacebar > 0.05 then --after typing in a valuebox, space_key() double-triggers for some reason, so we need to use this timer to make sure it only triggers once per 50ms or so
+    if not song.transport.playing then
+      song.transport:start_at(start_pos) 
+    else
+      song.transport:stop()
+    end
   end
+  
+  last_spacebar = os.clock()
   
   return true
 end
 
 --SHIFT SPACE KEY-----------------------------------
 local function shift_space_key()
-
-  if not song.transport.playing then
-    song.transport:start_at(song.transport.edit_pos) 
-  else
-    song.transport:stop()
+  
+  if os.clock() - last_spacebar > 0.05 then --after typing in a valuebox, space_key() double-triggers for some reason, so we need to use this timer to make sure it only triggers once per 50ms or so
+    if not song.transport.playing then
+      song.transport:start_at(song.transport.edit_pos) 
+    else
+      song.transport:stop()
+    end
   end
+  
+  last_spacebar = os.clock()
 
   return true
 end
@@ -1773,7 +1929,7 @@ end
 --UPDATE ALL CURVE DISPLAYS-----------------------------
 local function update_all_curve_displays()
 
-  for i = 1, 2 do    
+  for i = 1, 4 do    
     update_curve_display(i)
   end
 
@@ -1893,6 +2049,10 @@ end
 --QUEUE PROCESSING--------------------------------------
 local function queue_processing()
 
+  if debugvars.print_queue_processing then
+    print("queue_processing()")
+  end
+
   if not idle_processing then
     apply_reform()
   else
@@ -1956,6 +2116,26 @@ local function show_window()
     local sliders_height = 110
     local multipliers_size = 24
     local default_margin = 2
+    local re_sliders_width = 20
+    local re_sliders_height = 90
+    local rack_styles = {
+      "invisible", -- no background
+      "plain", -- undecorated, single coloured background
+      "border", -- same as plain, but with a bold nested border
+      "body", -- main "background" style, as used in dialog backgrounds
+      "panel", -- alternative "background" style, beveled
+      "group", -- background for "nested" groups within body
+    }
+    local main_rack_style = rack_styles[1]
+    local re_rack_style = rack_styles[6]
+    local bitmap_modes = {
+      "plain", -- bitmap is drawn as is, no recoloring is done
+      "transparent", -- same as plain, but black pixels will be fully transparent
+      "button_color", -- recolor the bitmap, using the theme's button color
+      "body_color", -- same as 'button_back' but with body text/back color
+      "main_color", -- same as 'button_back' but with main text/back colors
+    }
+    local border_bmp_mode = bitmap_modes[4]
     
     --create the curve displays
     local curvedisplayrow = {}
@@ -1987,25 +2167,6 @@ local function show_window()
       vb:row {  --main row
         id = "window_row",
       
-        vb:horizontal_aligner {
-          mode = "right",
-          margin = default_margin,
-          
-          vb:bitmap {
-            tooltip = "Indicates if any notes currently being processed are colliding with other notes that are also being processed",
-            id = "our_notes_collisions_bitmap",
-            mode = "button_color",
-            bitmap = "Bitmaps/0.bmp"
-          },
-          
-          vb:bitmap {
-            tooltip = "Indicates if any notes currently being processed are colliding with non-processed notes",
-            id = "wild_notes_collisions_bitmap",
-            mode = "button_color",
-            bitmap = "Bitmaps/0.bmp"
-          }      
-        },      
-      
         vb:column { --contains time/curve/offset columns
                 
           vb:horizontal_aligner { --aligns time/curve/offset control groups to window width
@@ -2013,20 +2174,31 @@ local function show_window()
             margin = default_margin,
           
             vb:column { --contains all time-related controls
-              style = "panel",
-              margin = default_margin,
-              
-              vb:space{
-                height = 2
-              },
+              style = main_rack_style,
+              --margin = default_margin,
               
               vb:horizontal_aligner { --aligns icon in column
-                mode = "center",
+                mode = "justify",
                 
-                vb:bitmap { --icon at top of time controls
-                  bitmap = "Bitmaps/clock.bmp",
-                  mode = "body_color"
-                }
+                vb:vertical_aligner {
+                  mode = "top",
+                  vb:bitmap{bitmap = "Bitmaps/tl.bmp", mode = border_bmp_mode}
+                },
+                
+                vb:column {                
+                  --vb:space{height = default_margin},
+                
+                  vb:bitmap { --icon at top of time controls
+                    bitmap = "Bitmaps/clock.bmp",
+                    mode = "body_color"
+                  }
+                },
+                
+                vb:vertical_aligner {
+                  mode = "top",
+                  vb:bitmap {bitmap = "Bitmaps/tr.bmp", mode = border_bmp_mode}
+                },
+                
               },
               
               vb:horizontal_aligner { --aligns time valuefield in column
@@ -2096,8 +2268,13 @@ local function show_window()
               },
                 
               vb:horizontal_aligner { --aligns time rotary in column
-                mode = "center",
-              
+                mode = "justify",
+                  
+                vb:vertical_aligner {
+                  mode = "bottom",
+                  vb:bitmap {bitmap = "Bitmaps/bl.bmp", mode = border_bmp_mode}
+                },   
+                
                 vb:rotary { 
                   id = "time_multiplier_rotary", 
                   tooltip = "Time Slider Range Extension", 
@@ -2113,27 +2290,36 @@ local function show_window()
                       queue_processing()
                     end
                   end 
-                } --close rotary            
-              } --close rotary aligner
+                }, --close rotary 
+                
+                vb:vertical_aligner {
+                  mode = "bottom",
+                  vb:bitmap {bitmap = "Bitmaps/br.bmp", mode = border_bmp_mode}
+                }
+                        
+              } --close horizontal rotary aligner
             }, --close time controls column
             
             
             vb:column { --contains all curve-related controls
               id = "curve_column",
-              style = "panel",
-              margin = default_margin,
+              style = main_rack_style,
+              --margin = default_margin,
               
-              vb:space{
-                height = 2
-              },
+              --vb:space{height = default_margin},
               
               vb:horizontal_aligner { --aligns curve display in column
-                mode = "center",
+                mode = "justify",
                 --spacing = -22,
+                
+                vb:vertical_aligner {
+                  mode = "top",
+                  vb:bitmap{bitmap = "Bitmaps/tl.bmp", mode = border_bmp_mode}
+                },
                 
                 --vb:column{
                   --margin = 3,
-                  curvedisplayrow[1]
+                  curvedisplayrow[1],
                 --},
                 
                 --[[vb:bitmap {
@@ -2145,6 +2331,12 @@ local function show_window()
                     queue_processing()
                   end
                 }--]]
+                
+                vb:vertical_aligner {
+                  mode = "top",
+                  vb:bitmap{bitmap = "Bitmaps/tr.bmp", mode = border_bmp_mode}
+                },
+                
               },
               
               vb:horizontal_aligner { --aligns time valuefield in column
@@ -2209,50 +2401,77 @@ local function show_window()
               },
               
               vb:horizontal_aligner {
-                mode = "center",
+                mode = "justify",
+              
+                vb:vertical_aligner {
+                  mode = "bottom",
+                  vb:space{height = 20},
+                  vb:bitmap{bitmap = "Bitmaps/bl.bmp", mode = border_bmp_mode}
+                },
                 
-                vb:bitmap {
-                  id = "curve_type_1",
-                  bitmap = "Bitmaps/curve1.bmp",
-                  mode = "button_color",
-                  notifier = function()
-                    vb.views.curve_type_1.bitmap = "Bitmaps/curve1pressed.bmp"
-                    vb.views.curve_type_2.bitmap = "Bitmaps/curve2.bmp"
-                    curve_type[1] = 1
-                    update_curve_display(1)
-                    queue_processing()
-                  end
-                },
-                vb:bitmap {
-                  id = "curve_type_2",
-                  bitmap = "Bitmaps/curve2.bmp",
-                  mode = "button_color",
-                  notifier = function()
-                    vb.views.curve_type_1.bitmap = "Bitmaps/curve1.bmp"
-                    vb.views.curve_type_2.bitmap = "Bitmaps/curve2pressed.bmp"
-                    curve_type[1] = 2
-                    update_curve_display(1)
-                    queue_processing()
-                  end
-                },
-              }              
+                vb:vertical_aligner {
+                  mode = "top",
+                  
+                  vb:row {                
+                    vb:bitmap {
+                      id = "curve_type_1",
+                      bitmap = "Bitmaps/curve1pressed.bmp",
+                      mode = "button_color",
+                      notifier = function()
+                        vb.views.curve_type_1.bitmap = "Bitmaps/curve1pressed.bmp"
+                        vb.views.curve_type_2.bitmap = "Bitmaps/curve2.bmp"
+                        curve_type[1] = 1
+                        update_curve_display(1)
+                        queue_processing()
+                      end
+                    },
+                    vb:bitmap {
+                      id = "curve_type_2",
+                      bitmap = "Bitmaps/curve2.bmp",
+                      mode = "button_color",
+                      notifier = function()
+                        vb.views.curve_type_1.bitmap = "Bitmaps/curve1.bmp"
+                        vb.views.curve_type_2.bitmap = "Bitmaps/curve2pressed.bmp"
+                        curve_type[1] = 2
+                        update_curve_display(1)
+                        queue_processing()
+                      end
+                    }
+                  }  --close row
+                },  --close vertical aligner
+                                  
+                vb:vertical_aligner {
+                  mode = "bottom",
+                  vb:space{height = 20},
+                  vb:bitmap{bitmap = "Bitmaps/br.bmp", mode = border_bmp_mode}
+                }
+                  
+              } --close horizontal aligner
             }, --close curve controls column
           
         
             vb:column { --contains all offset-related controls
-              style = "panel",
-              margin = default_margin,
+              style = main_rack_style,
+              --margin = default_margin,
               
-              vb:space{
-                height = 2
-              },
+              --vb:space{height = default_margin},
             
               vb:horizontal_aligner { --aligns icon in column
-                mode = "center",
+                mode = "justify",
+                
+                vb:vertical_aligner {
+                  mode = "top",
+                  vb:bitmap{bitmap = "Bitmaps/tl.bmp", mode = border_bmp_mode}
+                },
                 
                 vb:bitmap { --icon at top of offset controls
                   bitmap = "Bitmaps/arrows.bmp",
                   mode = "body_color"
+                },
+                
+                vb:vertical_aligner {
+                  mode = "top",
+                  vb:bitmap{bitmap = "Bitmaps/tr.bmp", mode = border_bmp_mode}
                 }
               },
             
@@ -2317,7 +2536,12 @@ local function show_window()
               },
               
               vb:horizontal_aligner { --aligns offset rotary in column
-                mode = "center",
+                mode = "justify",
+              
+                vb:vertical_aligner {
+                  mode = "bottom",
+                  vb:bitmap{bitmap = "Bitmaps/bl.bmp", mode = border_bmp_mode}
+                },
               
                 vb:rotary { 
                   id = "offset_multiplier_rotary", 
@@ -2334,14 +2558,39 @@ local function show_window()
                       queue_processing()
                     end
                   end 
-                } --close rotary
+                }, --close rotary
+                
+                vb:vertical_aligner {
+                  mode = "bottom",
+                  vb:bitmap{bitmap = "Bitmaps/br.bmp", mode = border_bmp_mode}
+                }
+                
               } --close rotary aligner
             } --close offset column
           } --close time/curve/offset aligner
         }, --close time/curve/offset column
         
+        vb:horizontal_aligner {
+          mode = "center",
+          --margin = default_margin,
+          
+          vb:bitmap {
+            tooltip = "Indicates if any notes currently being processed are colliding with other processed notes",
+            id = "our_notes_collisions_bitmap",
+            mode = "main_color",
+            bitmap = "Bitmaps/led0.bmp"
+          },
+          
+          vb:bitmap {
+            tooltip = "Indicates if any notes currently being processed are colliding with non-processed notes",
+            id = "wild_notes_collisions_bitmap",
+            mode = "main_color",
+            bitmap = "Bitmaps/led0.bmp"
+          }      
+        },   
+        
         vb:column { --contains vol,pan,fx buttons
-          margin = default_margin,
+          --margin = default_margin,
           
           vb:vertical_aligner {
             mode = "top",
@@ -2367,7 +2616,11 @@ local function show_window()
               bitmap = "Bitmaps/panbutton.bmp",
               mode = "button_color",
               notifier = function()
-                
+                global_flags.pan = not global_flags.pan
+                vb.views.pan_column.visible = global_flags.pan
+                if global_flags.pan then vb.views.panbutton.bitmap = "Bitmaps/panbuttonpressed.bmp"
+                else vb.views.panbutton.bitmap = "Bitmaps/panbutton.bmp" end
+                queue_processing()
               end
             },
             
@@ -2377,7 +2630,11 @@ local function show_window()
               bitmap = "Bitmaps/fxbutton.bmp",
               mode = "button_color",
               notifier = function()
-                
+                global_flags.fx = not global_flags.fx
+                vb.views.fx_column.visible = global_flags.fx
+                if global_flags.fx then vb.views.fxbutton.bitmap = "Bitmaps/fxbuttonpressed.bmp"
+                else vb.views.fxbutton.bitmap = "Bitmaps/fxbutton.bmp" end
+                queue_processing()
               end
             }
             
@@ -2386,10 +2643,12 @@ local function show_window()
         
         vb:column { --contains all volume-related controls
           id = "vol_column",
-          style = "panel",
-          margin = default_margin,
+          style = re_rack_style,
+          --margin = default_margin,
           visible = false,
-
+          
+          vb:space{height = default_margin},
+          
           vb:horizontal_aligner { --aligns icon in column
             mode = "center",
             
@@ -2398,6 +2657,8 @@ local function show_window()
               mode = "body_color"
             }
           },
+          
+          vb:space{height = default_margin},
           
           vb:valuebox {
             id = "vol_max_box",
@@ -2428,10 +2689,12 @@ local function show_window()
             end          
           }, --close volume valuebox
           
+          vb:space{height = default_margin},
+          
           vb:horizontal_aligner {
             mode = "distribute",
           
-            vb:column { --contains volume slider and volume curve display
+            vb:column {
             
               vb:horizontal_aligner {
                 mode = "center",
@@ -2448,8 +2711,8 @@ local function show_window()
                   min = -1, 
                   max = 1, 
                   value = curve_intensity[2], 
-                  width = sliders_width, 
-                  height = sliders_height, 
+                  width = re_sliders_width, 
+                  height = re_sliders_height, 
                   notifier = function(value)            
                     if vb_notifiers_on then
                       curve_intensity[2] = value
@@ -2497,7 +2760,7 @@ local function show_window()
             
             vb:button { --redistribute button
               id = "vol_re_button",
-              tooltip = "Distribute Volume Evenly throughout selection",
+              tooltip = "Redistribute Volume evenly Throughout Selection\n(based on Volume Lo and Volume Hi values)",
               bitmap = "Bitmaps/redistribute.bmp",
               width = "100%",
               notifier = function()
@@ -2511,7 +2774,278 @@ local function show_window()
               end
             }
           }          
-        } --close volume controls column
+        }, --close volume controls column
+        
+        vb:column { --contains all panning-related controls
+          id = "pan_column",
+          style = re_rack_style,
+          --margin = default_margin,
+          visible = false,
+          
+          vb:space{height = default_margin},
+          
+          vb:horizontal_aligner { --aligns icon in column
+            mode = "center",
+            
+            vb:bitmap { --icon at top of controls
+              bitmap = "Bitmaps/pan.bmp",
+              mode = "body_color"
+            }
+          },
+          
+          vb:space{height = default_margin},
+          
+          vb:valuebox {
+            id = "pan_max_box",
+            tooltip = "Panning Hi",
+            width = 50,
+            height = 15,
+            min = 0,
+            max = 128,
+            value = 128,
+            
+            --called when a value is typed in, to convert the input string to a number value
+            tonumber = function(str)
+              return tonumber(str, 0x10)
+            end,
+            
+            --called when field is clicked, after tonumber is called, and after the notifier is called
+            --it converts the value to a formatted string to be displayed
+            tostring = function(val)
+              return ("%.2X"):format(val)
+            end,
+            
+            --called whenever the value is changed
+            notifier = function(val)
+              if vb_notifiers_on then
+                global_flags.pan_max = (val < 255 and val) or 255
+                queue_processing()
+              end
+            end          
+          }, --close pan valuebox
+          
+          vb:space{height = default_margin},
+          
+          vb:horizontal_aligner {
+            mode = "distribute",
+          
+            vb:column { --contains panning remapping controls
+            
+              vb:horizontal_aligner {
+                mode = "center",
+                
+                curvedisplayrow[3]
+              },
+              
+              vb:horizontal_aligner { --aligns slider in column
+                mode = "center",
+              
+                vb:minislider {    
+                  id = "panning_slider", 
+                  tooltip = "Panning Curve", 
+                  min = -1, 
+                  max = 1, 
+                  value = curve_intensity[3], 
+                  width = re_sliders_width, 
+                  height = re_sliders_height, 
+                  notifier = function(value)            
+                    if vb_notifiers_on then
+                      curve_intensity[3] = value
+                      update_curve_display(3)
+                      queue_processing()
+                    end
+                  end    
+                }
+              }
+            }
+          },  --close horizontal aligner
+            
+          vb:valuebox {
+            id = "pan_min_box",
+            tooltip = "Panning Lo",
+            width = 50,
+            height = 15,
+            min = 0,
+            max = 128,
+            value = 0,
+            
+            --called when a value is typed in, to convert the input string to a number value
+            tonumber = function(str)
+              return tonumber(str, 0x10)
+            end,
+            
+            --called when field is clicked, after tonumber is called, and after the notifier is called
+            --it converts the value to a formatted string to be displayed
+            tostring = function(val)
+              return ("%.2X"):format(val)
+            end,        
+            
+            --called whenever the value is changed
+            notifier = function(val)
+              if vb_notifiers_on then
+                global_flags.pan_min = (val < 255 and val) or 255
+                queue_processing()
+              end
+            end
+          
+          },
+          
+          vb:horizontal_aligner { --aligns in column
+            mode = "center",
+            
+            vb:button { --redistribute button
+              id = "pan_re_button",
+              tooltip = "Redistribute Panning evenly throughout selection\n(based on Panning Lo and Panning Hi values)",
+              bitmap = "Bitmaps/redistribute.bmp",
+              width = "100%",
+              notifier = function()
+                global_flags.pan_re = not global_flags.pan_re
+                if global_flags.pan_re then
+                  vb.views.pan_re_button.color = theme.selected_button_back
+                else 
+                  vb.views.pan_re_button.color = {0,0,0}
+                end
+                queue_processing()
+              end
+            }
+          }          
+        }, --close panning controls column       
+        
+        vb:column { --contains all fx-related controls
+          id = "fx_column",
+          style = re_rack_style,
+          --margin = default_margin,
+          visible = false,
+          
+          vb:space{height = default_margin},
+          
+          vb:horizontal_aligner { --aligns icon in column
+            mode = "center",
+            
+            vb:bitmap { --icon at top of controls
+              bitmap = "Bitmaps/fx.bmp",
+              mode = "body_color"
+            }
+          },
+          
+          vb:space{height = default_margin},
+          
+          vb:valuebox {
+            id = "fx_max_box",
+            tooltip = "FX Hi",
+            width = 50,
+            height = 15,
+            min = 0,
+            max = 255,
+            value = 255,
+            
+            --called when a value is typed in, to convert the input string to a number value
+            tonumber = function(str)
+              return tonumber(str, 0x10)
+            end,
+            
+            --called when field is clicked, after tonumber is called, and after the notifier is called
+            --it converts the value to a formatted string to be displayed
+            tostring = function(val)
+              return ("%.2X"):format(val)
+            end,
+            
+            --called whenever the value is changed
+            notifier = function(val)
+              if vb_notifiers_on then
+                global_flags.fx_max = (val <= 255 and val) or 255
+                queue_processing()
+              end
+            end          
+          }, --close fx valuebox
+          
+          vb:space{height = default_margin},
+          
+          vb:horizontal_aligner {
+            mode = "distribute",
+          
+            vb:column { --contains FX remapping controls
+            
+              vb:horizontal_aligner {
+                mode = "center",
+                
+                curvedisplayrow[4]
+              },
+              
+              vb:horizontal_aligner { --aligns slider in column
+                mode = "center",
+              
+                vb:minislider {    
+                  id = "FX_slider", 
+                  tooltip = "FX Curve", 
+                  min = -1, 
+                  max = 1, 
+                  value = curve_intensity[3], 
+                  width = re_sliders_width, 
+                  height = re_sliders_height, 
+                  notifier = function(value)            
+                    if vb_notifiers_on then
+                      curve_intensity[4] = value
+                      update_curve_display(4)
+                      queue_processing()
+                    end
+                  end    
+                }
+              }
+            }
+          },  --close horizontal aligner
+            
+          vb:valuebox {
+            id = "fx_min_box",
+            tooltip = "FX Lo",
+            width = 50,
+            height = 15,
+            min = 0,
+            max = 255,
+            value = 0,
+            
+            --called when a value is typed in, to convert the input string to a number value
+            tonumber = function(str)
+              return tonumber(str, 0x10)
+            end,
+            
+            --called when field is clicked, after tonumber is called, and after the notifier is called
+            --it converts the value to a formatted string to be displayed
+            tostring = function(val)
+              return ("%.2X"):format(val)
+            end,        
+            
+            --called whenever the value is changed
+            notifier = function(val)
+              if vb_notifiers_on then
+                global_flags.fx_min = (val <= 255 and val) or 255
+                queue_processing()
+              end
+            end
+          
+          },
+          
+          vb:horizontal_aligner { --aligns in column
+            mode = "center",
+            
+            vb:button { --redistribute button
+              id = "fx_re_button",
+              tooltip = "Redistribute FX evenly throughout selection\n(based on FX Lo and FX Hi values)",
+              bitmap = "Bitmaps/redistribute.bmp",
+              width = "100%",
+              notifier = function()
+                global_flags.fx_re = not global_flags.fx_re
+                if global_flags.fx_re then
+                  vb.views.fx_re_button.color = theme.selected_button_back
+                else 
+                  vb.views.fx_re_button.color = {0,0,0}
+                end
+                queue_processing()
+              end
+            }
+          }          
+        } --close FX controls column 
+        
       }, --close row
       
       vb:row {
@@ -2519,7 +3053,7 @@ local function show_window()
         vb:horizontal_aligner { --aligns checkboxes and switches to window size
           mode = "justify",
           width = 220,
-          margin = default_margin,
+          --margin = default_margin,
         
           vb:column { --column containing our checkboxes
             style = "group",
@@ -2563,13 +3097,13 @@ local function show_window()
           
           vb:vertical_aligner { --aligns our switches to the bottom of the window
             mode = "bottom",
-            margin = default_margin,
+            --margin = default_margin,
             
             vb:row {
             
               vb:column {
                 style = "group",
-                margin = default_margin,
+                --margin = default_margin,
                 
                 vb:switch {
                   width = 94,
@@ -2607,7 +3141,7 @@ local function show_window()
               
                 vb:column { --column containing our switches
                   style = "group",
-                  margin = default_margin,
+                  --margin = default_margin,
                 
                   vb:switch {
                     id = "anchor_switch",
