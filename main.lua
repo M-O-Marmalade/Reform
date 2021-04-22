@@ -118,7 +118,7 @@ local placed_notes = {}
 local note_collisions = {ours = {}, wild = {}}
 local start_pos = renoise.SongPos()
 
-local global_flags = {
+local flags = {
   overflow = true,
   condense = false,
   redistribute = false,
@@ -268,7 +268,7 @@ local function reset_variables()
   earliest_placement = math.huge
   latest_placement = 0
   
-  global_flags = {
+  flags = {
     overflow = true,
     condense = false,
     redistribute = false,
@@ -311,21 +311,30 @@ local function reset_view()
   vb.views.offset_text.value = offset
   vb.views.offset_slider.value = offset
   vb.views.offset_multiplier_rotary.value = offset_multiplier
-  vb.views.overflow_flag_checkbox.value = global_flags.overflow
-  vb.views.condense_flag_checkbox.value = global_flags.condense
-  vb.views.redistribute_flag_checkbox.value = global_flags.redistribute
   vb.views.anchor_switch.value = anchor + 1
   vb.views.anchor_type_switch.value = anchor_type
-  vb.views.vol_min_box.value = global_flags.vol_orig_min
-  vb.views.vol_max_box.value = global_flags.vol_orig_max
-  vb.views.pan_min_box.value = global_flags.pan_orig_min
-  vb.views.pan_max_box.value = global_flags.pan_orig_max
-  vb.views.fx_min_box.value = global_flags.fx_orig_min
-  vb.views.fx_max_box.value = global_flags.fx_orig_max
+  vb.views.vol_min_box.value = flags.vol_orig_min
+  vb.views.vol_max_box.value = flags.vol_orig_max
+  vb.views.pan_min_box.value = flags.pan_orig_min
+  vb.views.pan_max_box.value = flags.pan_orig_max
+  vb.views.fx_min_box.value = flags.fx_orig_min
+  vb.views.fx_max_box.value = flags.fx_orig_max
+  
+  vb.views.overflow_button.color = flags.overflow and theme.selected_button_back or {0,0,0}
+  vb.views.condense_button.color = flags.condense and theme.selected_button_back or {0,0,0}
+  vb.views.redistribute_button.color = flags.redistribute and theme.selected_button_back or {0,0,0}
   
   vb.views.vol_column.visible = false
   vb.views.volbutton.bitmap = "Bitmaps/volbutton.bmp"
   vb.views.vol_re_button.color = {0,0,0}
+  
+  vb.views.pan_column.visible = false
+  vb.views.panbutton.bitmap = "Bitmaps/panbutton.bmp"
+  vb.views.pan_re_button.color = {0,0,0}
+  
+  vb.views.fx_column.visible = false
+  vb.views.fxbutton.bitmap = "Bitmaps/fxbutton.bmp"
+  vb.views.fx_re_button.color = {0,0,0}
   
   vb_notifiers_on = true
 
@@ -339,13 +348,12 @@ local function deactivate_controls()
     vb.views.time_text.active = false
     vb.views.time_slider.active = false
     vb.views.time_multiplier_rotary.active = false
-    vb.views.overflow_flag_checkbox.active = false
     vb.views.offset_text.active = false
     vb.views.offset_slider.active = false
     vb.views.offset_multiplier_rotary.active = false
-    vb.views.overflow_flag_checkbox.active = false
-    vb.views.condense_flag_checkbox.active = false
-    vb.views.redistribute_flag_checkbox.active = false
+    vb.views.overflow_button.active = false
+    vb.views.condense_button.active = false
+    vb.views.redistribute_button.active = false
     vb.views.anchor_switch.active = false
     vb.views.anchor_type_switch.active = false
   end
@@ -363,9 +371,9 @@ local function activate_controls()
     vb.views.offset_text.active = true
     vb.views.offset_slider.active = true
     vb.views.offset_multiplier_rotary.active = true
-    vb.views.overflow_flag_checkbox.active = true
-    vb.views.condense_flag_checkbox.active = true
-    vb.views.redistribute_flag_checkbox.active = true
+    vb.views.overflow_button.active = true
+    vb.views.condense_button.active = true
+    vb.views.redistribute_button.active = true
     vb.views.anchor_switch.active = true
     vb.views.anchor_type_switch.active = true
   end
@@ -647,8 +655,8 @@ local function calculate_note_placements()
   end
   if least_vol == 255 then least_vol = 128 end
   if greatest_vol == 255 then greatest_vol = 128 end
-  global_flags.vol_orig_min, global_flags.vol_min = least_vol, least_vol
-  global_flags.vol_orig_max, global_flags.vol_max = greatest_vol, greatest_vol
+  flags.vol_orig_min, flags.vol_min = least_vol, least_vol
+  flags.vol_orig_max, flags.vol_max = greatest_vol, greatest_vol
   --print("least_vol: " .. least_vol)
   --print("greatest_vol: " .. greatest_vol)
   
@@ -666,8 +674,8 @@ local function calculate_note_placements()
       least_pan = pan_val
     end
   end
-  global_flags.pan_orig_min, global_flags.pan_min = least_pan, least_pan
-  global_flags.pan_orig_max, global_flags.pan_max = greatest_pan, greatest_pan
+  flags.pan_orig_min, flags.pan_min = least_pan, least_pan
+  flags.pan_orig_max, flags.pan_max = greatest_pan, greatest_pan
   --print("least_pan: " .. least_pan)
   --print("greatest_pan: " .. greatest_pan)
   
@@ -683,8 +691,8 @@ local function calculate_note_placements()
       least_fx = fx_val
     end
   end
-  global_flags.fx_orig_min, global_flags.fx_min = least_fx, least_fx
-  global_flags.fx_orig_max, global_flags.fx_max = greatest_fx, greatest_fx
+  flags.fx_orig_min, flags.fx_min = least_fx, least_fx
+  flags.fx_orig_max, flags.fx_max = greatest_fx, greatest_fx
   --print("least_fx: " .. least_fx)
   --print("greatest_fx: " .. greatest_fx)
   
@@ -1014,7 +1022,7 @@ local function find_correct_index(s,p,t,l,c)
   p = song.sequencer:pattern(s)
   
   --if overflow is on, then push notes out to empty columns when available
-  if global_flags.overflow then
+  if flags.overflow then
     while true do
       if c == 12 then break
       elseif song:pattern(p):track(t):line(l):note_column(c).is_empty then break
@@ -1028,7 +1036,7 @@ local function find_correct_index(s,p,t,l,c)
   
   
   --if condense is on, then pull notes in to empty columns when available
-  if global_flags.condense then
+  if flags.condense then
     while true do
       if c == 1 then break
       elseif not song:pattern(p):track(t):line(l):note_column(c-1).is_empty then break
@@ -1046,13 +1054,13 @@ local function set_track_visibility(t)
   
   local columns_to_show = math.max(columns_overflowed_into[t], originally_visible_columns[1][t])
   
-  local time_changed = (time ~= 0) or (time_was_typed and typed_time ~= 1) or (offset ~= 0) or (offset_was_typed and typed_offset ~= 0) or global_flags.redistribute
+  local time_changed = (time ~= 0) or (time_was_typed and typed_time ~= 1) or (offset ~= 0) or (offset_was_typed and typed_offset ~= 0) or flags.redistribute
   
   song:track(t).visible_note_columns = columns_to_show  
-  song:track(t).volume_column_visible = global_flags.vol or originally_visible_columns[2][t]
-  song:track(t).panning_column_visible = global_flags.pan or originally_visible_columns[3][t]
+  song:track(t).volume_column_visible = flags.vol or originally_visible_columns[2][t]
+  song:track(t).panning_column_visible = flags.pan or originally_visible_columns[3][t]
   song:track(t).delay_column_visible = time_changed or originally_visible_columns[4][t]
-  song:track(t).sample_effects_column_visible = global_flags.fx or originally_visible_columns[5][t]
+  song:track(t).sample_effects_column_visible = flags.fx or originally_visible_columns[5][t]
   
 end
 
@@ -1123,7 +1131,7 @@ local function get_existing_note(index,counter)
       
       note_collisions.wild[counter] = true  --record a wild collision for this note
       
-      if global_flags.wild_notes then --if we are overwriting wild notes with our notes...
+      if flags.wild_notes then --if we are overwriting wild notes with our notes...
         
         selected_notes[counter].flags.write = true --set this note's write flag to true
         selected_notes[counter].flags.clear = false --set this note's clear flag to false
@@ -1152,7 +1160,7 @@ local function get_existing_note(index,counter)
     
       note_collisions.ours[counter] = true  --record a collision between our own notes for this note
       
-      if global_flags.our_notes then  --if we are overwriting our own notes...
+      if flags.our_notes then  --if we are overwriting our own notes...
         
         selected_notes[counter].flags.write = true --set this note's write flag to true
         selected_notes[counter].flags.clear = false --set this note's clear flag to false
@@ -1164,7 +1172,7 @@ local function get_existing_note(index,counter)
         selected_notes[counter].flags.clear = false --set this note's clear flag to false
         selected_notes[counter].flags.restore = false  --set this note's restore flag to false
       
-      end --end: if global_flags.our_notes    
+      end --end: if flags.our_notes    
     end --end: if is_wild()
   end --end: column.is_empty
 end
@@ -1216,14 +1224,14 @@ local function apply_curve(placement,type)
       end
     end
   elseif type == 2 then --if we are applying the curve for vol
-    anchors[1] = global_flags.vol_min
-    anchors[2] = global_flags.vol_max
+    anchors[1] = flags.vol_min
+    anchors[2] = flags.vol_max
   elseif type == 3 then --if we are applying the curve for pan
-    anchors[1] = global_flags.pan_min
-    anchors[2] = global_flags.pan_max
+    anchors[1] = flags.pan_min
+    anchors[2] = flags.pan_max
   elseif type == 4 then --if we are applying the curve for fx
-    anchors[1] = global_flags.fx_min
-    anchors[2] = global_flags.fx_max
+    anchors[1] = flags.fx_min
+    anchors[2] = flags.fx_max
   end
   
   --convert our placement range from (anchor1 - anchor2) to (0.0 - 1.0)
@@ -1290,7 +1298,7 @@ stclk(2)
   
   --decide which placement values to use
   local placement
-  if global_flags.redistribute then --if redistribution flag is set, we use the redistributed places
+  if flags.redistribute then --if redistribution flag is set, we use the redistributed places
     if anchor_type == 1 then
       placement = selected_notes[counter].redistributed_placement_in_note_range
     else
@@ -1348,22 +1356,22 @@ stclk(6)
   local vol_val = selected_notes[counter].volume_value
   if vol_val == 255 then vol_val = 128 end
   if vol_val <= 128 then 
-    if global_flags.vol then      
-      if global_flags.vol_re then
+    if flags.vol then      
+      if flags.vol_re then
         vol_val = remap_range(
           counter,
           1,
           #selected_notes,
-          global_flags.vol_min,
-          global_flags.vol_max
+          flags.vol_min,
+          flags.vol_max
         )
       else
         vol_val = remap_range(
           vol_val,
-          global_flags.vol_orig_min,
-          global_flags.vol_orig_max,
-          global_flags.vol_min,
-          global_flags.vol_max
+          flags.vol_orig_min,
+          flags.vol_orig_max,
+          flags.vol_min,
+          flags.vol_max
         )
       end
       
@@ -1379,22 +1387,22 @@ stclk(6)
   local pan_val = selected_notes[counter].panning_value
   if pan_val == 255 then pan_val = 128 end
   if pan_val <= 128 then 
-    if global_flags.pan then      
-      if global_flags.pan_re then
+    if flags.pan then      
+      if flags.pan_re then
         pan_val = remap_range(
           counter,
           1,
           #selected_notes,
-          global_flags.pan_min,
-          global_flags.pan_max
+          flags.pan_min,
+          flags.pan_max
         )
       else
         pan_val = remap_range(
           pan_val,
-          global_flags.pan_orig_min,
-          global_flags.pan_orig_max,
-          global_flags.pan_min,
-          global_flags.pan_max
+          flags.pan_orig_min,
+          flags.pan_orig_max,
+          flags.pan_min,
+          flags.pan_max
         )
       end
       
@@ -1409,22 +1417,22 @@ stclk(6)
   
   local fx_val = selected_notes[counter].effect_amount_value
   if fx_val <= 255 then 
-    if global_flags.fx then      
-      if global_flags.fx_re then
+    if flags.fx then      
+      if flags.fx_re then
         fx_val = remap_range(
           counter,
           1,
           #selected_notes,
-          global_flags.fx_min,
-          global_flags.fx_max
+          flags.fx_min,
+          flags.fx_max
         )
       else
         fx_val = remap_range(
           fx_val,
-          global_flags.fx_orig_min,
-          global_flags.fx_orig_max,
-          global_flags.fx_min,
-          global_flags.fx_max
+          flags.fx_orig_min,
+          flags.fx_orig_max,
+          flags.fx_min,
+          flags.fx_max
         )
       end
       
@@ -2101,7 +2109,7 @@ end
 --SET THEME COLORS-----------------------------------------
 local function set_theme_colors()
 
-  if global_flags.vol_re then vb.views.vol_re_button.color = theme.selected_button_back end
+  if flags.vol_re then vb.views.vol_re_button.color = theme.selected_button_back end
 
 end
 
@@ -2602,9 +2610,9 @@ local function show_window()
               bitmap = "Bitmaps/volbutton.bmp",
               mode = "button_color",
               notifier = function()
-                global_flags.vol = not global_flags.vol
-                vb.views.vol_column.visible = global_flags.vol
-                if global_flags.vol then vb.views.volbutton.bitmap = "Bitmaps/volbuttonpressed.bmp"
+                flags.vol = not flags.vol
+                vb.views.vol_column.visible = flags.vol
+                if flags.vol then vb.views.volbutton.bitmap = "Bitmaps/volbuttonpressed.bmp"
                 else vb.views.volbutton.bitmap = "Bitmaps/volbutton.bmp" end
                 queue_processing()
               end
@@ -2616,9 +2624,9 @@ local function show_window()
               bitmap = "Bitmaps/panbutton.bmp",
               mode = "button_color",
               notifier = function()
-                global_flags.pan = not global_flags.pan
-                vb.views.pan_column.visible = global_flags.pan
-                if global_flags.pan then vb.views.panbutton.bitmap = "Bitmaps/panbuttonpressed.bmp"
+                flags.pan = not flags.pan
+                vb.views.pan_column.visible = flags.pan
+                if flags.pan then vb.views.panbutton.bitmap = "Bitmaps/panbuttonpressed.bmp"
                 else vb.views.panbutton.bitmap = "Bitmaps/panbutton.bmp" end
                 queue_processing()
               end
@@ -2630,9 +2638,9 @@ local function show_window()
               bitmap = "Bitmaps/fxbutton.bmp",
               mode = "button_color",
               notifier = function()
-                global_flags.fx = not global_flags.fx
-                vb.views.fx_column.visible = global_flags.fx
-                if global_flags.fx then vb.views.fxbutton.bitmap = "Bitmaps/fxbuttonpressed.bmp"
+                flags.fx = not flags.fx
+                vb.views.fx_column.visible = flags.fx
+                if flags.fx then vb.views.fxbutton.bitmap = "Bitmaps/fxbuttonpressed.bmp"
                 else vb.views.fxbutton.bitmap = "Bitmaps/fxbutton.bmp" end
                 queue_processing()
               end
@@ -2683,7 +2691,7 @@ local function show_window()
             --called whenever the value is changed
             notifier = function(val)
               if vb_notifiers_on then
-                global_flags.vol_max = (val < 255 and val) or 255
+                flags.vol_max = (val < 255 and val) or 255
                 queue_processing()
               end
             end          
@@ -2748,7 +2756,7 @@ local function show_window()
             --called whenever the value is changed
             notifier = function(val)
               if vb_notifiers_on then
-                global_flags.vol_min = (val < 255 and val) or 255
+                flags.vol_min = (val < 255 and val) or 255
                 queue_processing()
               end
             end
@@ -2761,11 +2769,11 @@ local function show_window()
             vb:button { --redistribute button
               id = "vol_re_button",
               tooltip = "Redistribute Volume evenly Throughout Selection\n(based on Volume Lo and Volume Hi values)",
-              bitmap = "Bitmaps/redistribute.bmp",
+              bitmap = "Bitmaps/redistributelvls.bmp",
               width = "100%",
               notifier = function()
-                global_flags.vol_re = not global_flags.vol_re
-                if global_flags.vol_re then
+                flags.vol_re = not flags.vol_re
+                if flags.vol_re then
                   vb.views.vol_re_button.color = theme.selected_button_back
                 else 
                   vb.views.vol_re_button.color = {0,0,0}
@@ -2818,7 +2826,7 @@ local function show_window()
             --called whenever the value is changed
             notifier = function(val)
               if vb_notifiers_on then
-                global_flags.pan_max = (val < 255 and val) or 255
+                flags.pan_max = (val < 255 and val) or 255
                 queue_processing()
               end
             end          
@@ -2883,7 +2891,7 @@ local function show_window()
             --called whenever the value is changed
             notifier = function(val)
               if vb_notifiers_on then
-                global_flags.pan_min = (val < 255 and val) or 255
+                flags.pan_min = (val < 255 and val) or 255
                 queue_processing()
               end
             end
@@ -2896,11 +2904,11 @@ local function show_window()
             vb:button { --redistribute button
               id = "pan_re_button",
               tooltip = "Redistribute Panning evenly throughout selection\n(based on Panning Lo and Panning Hi values)",
-              bitmap = "Bitmaps/redistribute.bmp",
+              bitmap = "Bitmaps/redistributelvls.bmp",
               width = "100%",
               notifier = function()
-                global_flags.pan_re = not global_flags.pan_re
-                if global_flags.pan_re then
+                flags.pan_re = not flags.pan_re
+                if flags.pan_re then
                   vb.views.pan_re_button.color = theme.selected_button_back
                 else 
                   vb.views.pan_re_button.color = {0,0,0}
@@ -2953,7 +2961,7 @@ local function show_window()
             --called whenever the value is changed
             notifier = function(val)
               if vb_notifiers_on then
-                global_flags.fx_max = (val <= 255 and val) or 255
+                flags.fx_max = (val <= 255 and val) or 255
                 queue_processing()
               end
             end          
@@ -3018,7 +3026,7 @@ local function show_window()
             --called whenever the value is changed
             notifier = function(val)
               if vb_notifiers_on then
-                global_flags.fx_min = (val <= 255 and val) or 255
+                flags.fx_min = (val <= 255 and val) or 255
                 queue_processing()
               end
             end
@@ -3031,11 +3039,11 @@ local function show_window()
             vb:button { --redistribute button
               id = "fx_re_button",
               tooltip = "Redistribute FX evenly throughout selection\n(based on FX Lo and FX Hi values)",
-              bitmap = "Bitmaps/redistribute.bmp",
+              bitmap = "Bitmaps/redistributelvls.bmp",
               width = "100%",
               notifier = function()
-                global_flags.fx_re = not global_flags.fx_re
-                if global_flags.fx_re then
+                flags.fx_re = not flags.fx_re
+                if flags.fx_re then
                   vb.views.fx_re_button.color = theme.selected_button_back
                 else 
                   vb.views.fx_re_button.color = {0,0,0}
@@ -3058,37 +3066,58 @@ local function show_window()
           vb:column { --column containing our checkboxes
             style = "group",
           
-            vb:checkbox { 
-              id = "overflow_flag_checkbox", 
+            vb:button { 
+              id = "overflow_button", 
               tooltip = "Overflow Mode",
-              value = global_flags.overflow, 
-              notifier = function(value)
+              bitmap = "Bitmaps/overflow.bmp",
+              width = 58,
+              height = 20,
+              notifier = function()
                 if vb_notifiers_on then
-                  global_flags.overflow = value
+                  flags.overflow = not flags.overflow
+                  if flags.overflow then
+                    vb.views.overflow_button.color = theme.selected_button_back
+                  else 
+                    vb.views.overflow_button.color = {0,0,0}
+                  end
                   queue_processing()
                 end
               end 
             },
             
-            vb:checkbox { 
-              id = "condense_flag_checkbox", 
+            vb:button { 
+              id = "condense_button",
               tooltip = "Condense Mode",
-              value = global_flags.condense, 
-              notifier = function(value)
+              bitmap = "Bitmaps/condense.bmp",
+              width = 58,
+              height = 20,
+              notifier = function()
                 if vb_notifiers_on then
-                  global_flags.condense = value
+                  flags.condense = not flags.condense
+                  if flags.condense then
+                    vb.views.condense_button.color = theme.selected_button_back
+                  else 
+                    vb.views.condense_button.color = {0,0,0}
+                  end
                   queue_processing()
                 end
               end 
             },
             
-            vb:checkbox { 
-              id = "redistribute_flag_checkbox", 
+            vb:button { 
+              id = "redistribute_button",
               tooltip = "Redistribute Mode",
-              value = global_flags.redistribute, 
-              notifier = function(value)
+              bitmap = "Bitmaps/redistribute.bmp",
+              width = 58,
+              height = 20,
+              notifier = function()
                 if vb_notifiers_on then
-                  global_flags.redistribute = value
+                  flags.redistribute = not flags.redistribute
+                  if flags.redistribute then
+                    vb.views.redistribute_button.color = theme.selected_button_back
+                  else 
+                    vb.views.redistribute_button.color = {0,0,0}
+                  end
                   queue_processing()
                 end
               end 
@@ -3113,8 +3142,8 @@ local function show_window()
                   value = 1, 
                   notifier = function(value)
                     if vb_notifiers_on then
-                      if value == 1 then global_flags.our_notes = false
-                      elseif value == 2 then global_flags.our_notes = true end
+                      if value == 1 then flags.our_notes = false
+                      elseif value == 2 then flags.our_notes = true end
                       queue_processing()
                     end
                   end 
@@ -3128,8 +3157,8 @@ local function show_window()
                   value = 1, 
                   notifier = function(value)
                     if vb_notifiers_on then
-                      if value == 1 then global_flags.wild_notes = false
-                      elseif value == 2 then global_flags.wild_notes = true end
+                      if value == 1 then flags.wild_notes = false
+                      elseif value == 2 then flags.wild_notes = true end
                       queue_processing()
                     end
                   end 
