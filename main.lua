@@ -1054,7 +1054,7 @@ local function set_track_visibility(t)
   
   local columns_to_show = math.max(columns_overflowed_into[t], originally_visible_columns[1][t])
   
-  local time_changed = (time ~= 0) or (time_was_typed and typed_time ~= 1) or (offset ~= 0) or (offset_was_typed and typed_offset ~= 0) or flags.redistribute
+  local time_changed = (time ~= 0) or (time_was_typed and typed_time ~= 1) or (offset ~= 0) or (offset_was_typed and typed_offset ~= 0) or flags.redistribute or curve_intensity[1] ~= 0
   
   song:track(t).visible_note_columns = columns_to_show  
   song:track(t).volume_column_visible = flags.vol or originally_visible_columns[2][t]
@@ -1385,7 +1385,7 @@ stclk(6)
   if vol_val == 128 then vol_val = 255 end
   
   local pan_val = selected_notes[counter].panning_value
-  if pan_val == 255 then pan_val = 128 end
+  if pan_val == 255 then pan_val = 64 end
   if pan_val <= 128 then 
     if flags.pan then      
       if flags.pan_re then
@@ -2124,6 +2124,7 @@ local function show_window()
     local sliders_height = 110
     local multipliers_size = 24
     local default_margin = 2
+    local default_gap = 5
     local re_sliders_width = 20
     local re_sliders_height = 90
     local rack_styles = {
@@ -2134,7 +2135,7 @@ local function show_window()
       "panel", -- alternative "background" style, beveled
       "group", -- background for "nested" groups within body
     }
-    local main_rack_style = rack_styles[1]
+    local main_rack_style = rack_styles[5]
     local re_rack_style = rack_styles[6]
     local bitmap_modes = {
       "plain", -- bitmap is drawn as is, no recoloring is done
@@ -2185,13 +2186,17 @@ local function show_window()
               style = main_rack_style,
               --margin = default_margin,
               
+              vb:space {
+                height = default_gap
+              },
+              
               vb:horizontal_aligner { --aligns icon in column
                 mode = "justify",
                 
-                vb:vertical_aligner {
+                --[[vb:vertical_aligner {
                   mode = "top",
                   vb:bitmap{bitmap = "Bitmaps/tl.bmp", mode = border_bmp_mode}
-                },
+                },--]]
                 
                 vb:column {                
                   --vb:space{height = default_margin},
@@ -2202,10 +2207,10 @@ local function show_window()
                   }
                 },
                 
-                vb:vertical_aligner {
+                --[[vb:vertical_aligner {
                   mode = "top",
                   vb:bitmap {bitmap = "Bitmaps/tr.bmp", mode = border_bmp_mode}
-                },
+                },--]]
                 
               },
               
@@ -2278,10 +2283,10 @@ local function show_window()
               vb:horizontal_aligner { --aligns time rotary in column
                 mode = "justify",
                   
-                vb:vertical_aligner {
+                --[[vb:vertical_aligner {
                   mode = "bottom",
                   vb:bitmap {bitmap = "Bitmaps/bl.bmp", mode = border_bmp_mode}
-                },   
+                },  --]] 
                 
                 vb:rotary { 
                   id = "time_multiplier_rotary", 
@@ -2300,12 +2305,17 @@ local function show_window()
                   end 
                 }, --close rotary 
                 
-                vb:vertical_aligner {
+                --[[vb:vertical_aligner {
                   mode = "bottom",
                   vb:bitmap {bitmap = "Bitmaps/br.bmp", mode = border_bmp_mode}
-                }
+                }--]]
                         
-              } --close horizontal rotary aligner
+              }, --close horizontal rotary aligner
+              
+              vb:space {
+                height = default_gap
+              }
+              
             }, --close time controls column
             
             
@@ -2314,16 +2324,20 @@ local function show_window()
               style = main_rack_style,
               --margin = default_margin,
               
+              vb:space {
+                height = default_gap
+              },
+              
               --vb:space{height = default_margin},
               
               vb:horizontal_aligner { --aligns curve display in column
                 mode = "justify",
                 --spacing = -22,
                 
-                vb:vertical_aligner {
+                --[[vb:vertical_aligner {
                   mode = "top",
                   vb:bitmap{bitmap = "Bitmaps/tl.bmp", mode = border_bmp_mode}
-                },
+                },--]]
                 
                 --vb:column{
                   --margin = 3,
@@ -2340,10 +2354,10 @@ local function show_window()
                   end
                 }--]]
                 
-                vb:vertical_aligner {
+                --[[vb:vertical_aligner {
                   mode = "top",
                   vb:bitmap{bitmap = "Bitmaps/tr.bmp", mode = border_bmp_mode}
-                },
+                },--]]
                 
               },
               
@@ -2411,11 +2425,11 @@ local function show_window()
               vb:horizontal_aligner {
                 mode = "justify",
               
-                vb:vertical_aligner {
+                --[[vb:vertical_aligner {
                   mode = "bottom",
                   vb:space{height = 20},
                   vb:bitmap{bitmap = "Bitmaps/bl.bmp", mode = border_bmp_mode}
-                },
+                },--]]
                 
                 vb:vertical_aligner {
                   mode = "top",
@@ -2444,15 +2458,25 @@ local function show_window()
                         update_curve_display(1)
                         queue_processing()
                       end
+                    },
+                    
+                    vb:space {
+                      height = 24,
                     }
-                  }  --close row
+                                        
+                  },  --close row
+                  
+                  vb:space {
+                    height = default_gap
+                  }
+                  
                 },  --close vertical aligner
                                   
-                vb:vertical_aligner {
+                --[[vb:vertical_aligner {
                   mode = "bottom",
                   vb:space{height = 20},
                   vb:bitmap{bitmap = "Bitmaps/br.bmp", mode = border_bmp_mode}
-                }
+                }--]]
                   
               } --close horizontal aligner
             }, --close curve controls column
@@ -2462,25 +2486,29 @@ local function show_window()
               style = main_rack_style,
               --margin = default_margin,
               
+              vb:space {
+                height = default_gap
+              },
+              
               --vb:space{height = default_margin},
             
               vb:horizontal_aligner { --aligns icon in column
                 mode = "justify",
                 
-                vb:vertical_aligner {
+                --[[vb:vertical_aligner {
                   mode = "top",
                   vb:bitmap{bitmap = "Bitmaps/tl.bmp", mode = border_bmp_mode}
-                },
+                },--]]
                 
                 vb:bitmap { --icon at top of offset controls
                   bitmap = "Bitmaps/arrows.bmp",
                   mode = "body_color"
                 },
                 
-                vb:vertical_aligner {
+                --[[vb:vertical_aligner {
                   mode = "top",
                   vb:bitmap{bitmap = "Bitmaps/tr.bmp", mode = border_bmp_mode}
-                }
+                }--]]
               },
             
               vb:horizontal_aligner { --aligns offset valuefield in column
@@ -2546,10 +2574,10 @@ local function show_window()
               vb:horizontal_aligner { --aligns offset rotary in column
                 mode = "justify",
               
-                vb:vertical_aligner {
+                --[[vb:vertical_aligner {
                   mode = "bottom",
                   vb:bitmap{bitmap = "Bitmaps/bl.bmp", mode = border_bmp_mode}
-                },
+                },--]]
               
                 vb:rotary { 
                   id = "offset_multiplier_rotary", 
@@ -2568,34 +2596,51 @@ local function show_window()
                   end 
                 }, --close rotary
                 
-                vb:vertical_aligner {
+                --[[vb:vertical_aligner {
                   mode = "bottom",
                   vb:bitmap{bitmap = "Bitmaps/br.bmp", mode = border_bmp_mode}
-                }
+                }--]]
                 
-              } --close rotary aligner
+              }, --close rotary aligner
+              
+              vb:space {
+                height = default_gap
+              }
+              
             } --close offset column
           } --close time/curve/offset aligner
         }, --close time/curve/offset column
         
-        vb:horizontal_aligner {
-          mode = "center",
-          --margin = default_margin,
-          
-          vb:bitmap {
-            tooltip = "Indicates if any notes currently being processed are colliding with other processed notes",
-            id = "our_notes_collisions_bitmap",
-            mode = "main_color",
-            bitmap = "Bitmaps/led0.bmp"
+        vb:column {
+          vb:horizontal_aligner {
+            mode = "center",
+            --margin = default_margin,
+            
+            vb:bitmap {
+              tooltip = "Indicates if any notes currently being processed are colliding with other processed notes",
+              id = "our_notes_collisions_bitmap",
+              mode = "main_color",
+              bitmap = "Bitmaps/led0.bmp"
+            },
+            
+            vb:bitmap {
+              tooltip = "Indicates if any notes currently being processed are colliding with non-processed notes",
+              id = "wild_notes_collisions_bitmap",
+              mode = "main_color",
+              bitmap = "Bitmaps/led0.bmp"
+            }      
           },
           
-          vb:bitmap {
-            tooltip = "Indicates if any notes currently being processed are colliding with non-processed notes",
-            id = "wild_notes_collisions_bitmap",
-            mode = "main_color",
-            bitmap = "Bitmaps/led0.bmp"
-          }      
-        },   
+          vb:button { --help button
+            tooltip = "Help",
+            bitmap = "Bitmaps/question.bmp",
+            --width = "100%",
+            notifier = function()
+              app:open_url("https://xephyrpanda.wixsite.com/citrus64/reform")
+            end
+          }
+          
+        },
         
         vb:column { --contains vol,pan,fx buttons
           --margin = default_margin,
@@ -3070,7 +3115,7 @@ local function show_window()
               id = "overflow_button", 
               tooltip = "Overflow Mode",
               bitmap = "Bitmaps/overflow.bmp",
-              width = 58,
+              width = 36,
               height = 20,
               notifier = function()
                 if vb_notifiers_on then
@@ -3089,7 +3134,7 @@ local function show_window()
               id = "condense_button",
               tooltip = "Condense Mode",
               bitmap = "Bitmaps/condense.bmp",
-              width = 58,
+              width = 36,
               height = 20,
               notifier = function()
                 if vb_notifiers_on then
@@ -3108,7 +3153,7 @@ local function show_window()
               id = "redistribute_button",
               tooltip = "Redistribute Mode",
               bitmap = "Bitmaps/redistribute.bmp",
-              width = 58,
+              width = 36,
               height = 20,
               notifier = function()
                 if vb_notifiers_on then
