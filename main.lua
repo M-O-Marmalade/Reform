@@ -2230,6 +2230,8 @@ local function show_window()
                   tonumber = function(str)
                     local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
                     val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
+                    if val and -256 > val then val = -256 end
+                    if val and 256 < val then val = 256 end
                     if val and -256 <= val and val <= 256 then --if val is a number, and within min/max
                       if debugvars.print_valuefield then print("time tonumber = " .. val) end
                       typed_time = val
@@ -2377,6 +2379,8 @@ local function show_window()
                   tonumber = function(str)
                     local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
                     val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
+                    if val and -1 > val then val = -1 end
+                    if val and 1 < val then val = 1 end
                     if val and -1 <= val and val <= 1 then --if val is a number, and within min/max
                       curve_intensity[1] = val
                       vb.views.curve_slider.value = val
@@ -2526,6 +2530,8 @@ local function show_window()
                   tonumber = function(str)
                     local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
                     val = tonumber(val) --this tonumber() is Lua's basic string-to-number converter
+                    if val and -256 > val then val = -256 end
+                    if val and 256 < val then val = 256 end
                     if val and -256 <= val and val <= 256 then --if val is a number, and within min/max
                       if debugvars.print_valuefield then print("offset tonumber = " .. val) end
                       typed_offset = val
