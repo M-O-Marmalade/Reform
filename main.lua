@@ -51,6 +51,16 @@ local last_spacebar = 0
 local theme = {
   selected_button_back = {255,0,0}
 }
+local tooltips = {
+  collision_sel = {
+    "Indicates if selected notes are overwriting each other",
+    "\n[First] to keep earlier notes\n[Last] to keep later notes"
+  },
+  collision_wild = {
+    "Indicates if selected notes are colliding with non-selected notes",
+    "\n[Sel] to keep selected notes\n[Not] to keep non-selected notes"
+  }
+}
 
 local previous_time = 0
 local idle_processing = false --if apply_reform() takes longer than 40ms, this becomes true
@@ -122,8 +132,8 @@ local flags = {
   overflow = true,
   condense = false,
   redistribute = false,
-  our_notes = false,
-  wild_notes = false,
+  our_notes = false,  --true == keep later notes, false == keep earlier notes
+  wild_notes = true,  --true == keep selected notes, false == keep wild notes
   
   vol = false,
   vol_re = false,
@@ -273,7 +283,7 @@ local function reset_variables()
     condense = false,
     redistribute = false,
     our_notes = false,
-    wild_notes = false,
+    wild_notes = true,
     
     vol = false,
     vol_re = false,
@@ -1504,11 +1514,33 @@ local function update_collision_bitmaps()
     if v then wild_collisions = true end
   end
   
-  if our_collisions then our_collisions = 1 else our_collisions = 0 end
-  if wild_collisions then wild_collisions = 1 else wild_collisions = 0 end
-
-  vb.views.our_notes_collisions_bitmap.bitmap = ("Bitmaps/led%i.bmp"):format(our_collisions)
-  vb.views.wild_notes_collisions_bitmap.bitmap = ("Bitmaps/led%i.bmp"):format(wild_collisions)
+  if our_collisions then
+    vb.views.collision_sel_bmp.tooltip = tooltips.collision_sel[1] .. tooltips.collision_sel[2]
+    vb.views.collision_sel_bmp.active = true
+    vb.views.collision_sel_bmp.mode = "button_color"
+    if not flags.our_notes then vb.views.collision_sel_bmp.bitmap = "Bitmaps/collision_sel_1.bmp"
+    else vb.views.collision_sel_bmp.bitmap = "Bitmaps/collision_sel_2.bmp"
+    end
+  else
+    vb.views.collision_sel_bmp.tooltip = tooltips.collision_sel[1]
+    vb.views.collision_sel_bmp.active = false
+    vb.views.collision_sel_bmp.bitmap = "Bitmaps/collision_sel_0.bmp"
+    vb.views.collision_sel_bmp.mode = "main_color"
+  end
+  
+  if wild_collisions then
+    vb.views.collision_wild_bmp.tooltip = tooltips.collision_wild[1] .. tooltips.collision_wild[2]
+    vb.views.collision_wild_bmp.active = true
+    vb.views.collision_wild_bmp.mode = "button_color"
+    if flags.wild_notes then vb.views.collision_wild_bmp.bitmap = "Bitmaps/collision_wild_1.bmp"
+    else vb.views.collision_wild_bmp.bitmap = "Bitmaps/collision_wild_2.bmp"
+    end
+  else
+    vb.views.collision_wild_bmp.tooltip = tooltips.collision_wild[1]
+    vb.views.collision_wild_bmp.active = false
+    vb.views.collision_wild_bmp.bitmap = "Bitmaps/collision_wild_0.bmp"
+    vb.views.collision_wild_bmp.mode = "main_color"
+  end
 
 end
 
@@ -2171,10 +2203,8 @@ local function show_window()
     
     window_content = vb:column {  --our entire view will be in one big column
       id = "window_content",
-      --width = 144,  --set the window's width
-      
-      vb:row {  --main row
-        id = "window_row",
+            
+      vb:row {  --1ST ROW (contains sliders, and vol/pan/fx buttons)
       
         vb:column { --contains time/curve/offset columns
                 
@@ -2183,40 +2213,21 @@ local function show_window()
             margin = default_margin,
           
             vb:column { --contains all time-related controls
-              style = main_rack_style,
-              --margin = default_margin,
-              
-              vb:space {
-                height = default_gap
-              },
+              style = main_rack_style,              
+              vb:space {height = default_gap},
               
               vb:horizontal_aligner { --aligns icon in column
-                mode = "justify",
-                
-                --[[vb:vertical_aligner {
-                  mode = "top",
-                  vb:bitmap{bitmap = "Bitmaps/tl.bmp", mode = border_bmp_mode}
-                },--]]
-                
+                mode = "justify",                
                 vb:column {                
-                  --vb:space{height = default_margin},
-                
                   vb:bitmap { --icon at top of time controls
                     bitmap = "Bitmaps/clock.bmp",
                     mode = "body_color"
                   }
-                },
-                
-                --[[vb:vertical_aligner {
-                  mode = "top",
-                  vb:bitmap {bitmap = "Bitmaps/tr.bmp", mode = border_bmp_mode}
-                },--]]
-                
+                }
               },
               
               vb:horizontal_aligner { --aligns time valuefield in column
-                mode = "center",
-                
+                mode = "center",                
                 vb:valuefield {
                   id = "time_text",
                   tooltip = "Type exact time multiplication values here!",
@@ -2258,8 +2269,7 @@ local function show_window()
               },
               
               vb:horizontal_aligner { --aligns time slider in column
-                mode = "center",
-                            
+                mode = "center",                            
                 vb:minislider {    
                   id = "time_slider", 
                   tooltip = "Time", 
@@ -2283,13 +2293,7 @@ local function show_window()
               },
                 
               vb:horizontal_aligner { --aligns time rotary in column
-                mode = "justify",
-                  
-                --[[vb:vertical_aligner {
-                  mode = "bottom",
-                  vb:bitmap {bitmap = "Bitmaps/bl.bmp", mode = border_bmp_mode}
-                },  --]] 
-                
+                mode = "justify",                
                 vb:rotary { 
                   id = "time_multiplier_rotary", 
                   tooltip = "Time Slider Range Extension", 
@@ -2305,67 +2309,26 @@ local function show_window()
                       queue_processing()
                     end
                   end 
-                }, --close rotary 
-                
-                --[[vb:vertical_aligner {
-                  mode = "bottom",
-                  vb:bitmap {bitmap = "Bitmaps/br.bmp", mode = border_bmp_mode}
-                }--]]
-                        
+                }, --close rotary                         
               }, --close horizontal rotary aligner
               
-              vb:space {
-                height = default_gap
-              }
-              
+              vb:space {height = default_gap}                            
             }, --close time controls column
             
             
             vb:column { --contains all curve-related controls
               id = "curve_column",
               style = main_rack_style,
-              --margin = default_margin,
               
-              vb:space {
-                height = default_gap
-              },
-              
-              --vb:space{height = default_margin},
+              vb:space {height = default_gap},
               
               vb:horizontal_aligner { --aligns curve display in column
                 mode = "justify",
-                --spacing = -22,
-                
-                --[[vb:vertical_aligner {
-                  mode = "top",
-                  vb:bitmap{bitmap = "Bitmaps/tl.bmp", mode = border_bmp_mode}
-                },--]]
-                
-                --vb:column{
-                  --margin = 3,
-                  curvedisplayrow[1],
-                --},
-                
-                --[[vb:bitmap {
-                  bitmap = "Bitmaps/curvebutton.bmp",
-                  mode = "body_color",
-                  notifier = function()
-                    curve_type[1] = curve_type[1] % 2 + 1
-                    update_curve_display(1)
-                    queue_processing()
-                  end
-                }--]]
-                
-                --[[vb:vertical_aligner {
-                  mode = "top",
-                  vb:bitmap{bitmap = "Bitmaps/tr.bmp", mode = border_bmp_mode}
-                },--]]
-                
+                curvedisplayrow[1],                
               },
               
-              vb:horizontal_aligner { --aligns time valuefield in column
-                mode = "center",
-                
+              vb:horizontal_aligner { --aligns curve valuefield in column
+                mode = "center",                
                 vb:valuefield {
                   id = "curve_text",
                   tooltip = "Type exact curve intensity values here!",
@@ -2401,12 +2364,11 @@ local function show_window()
                   --notifier is called whenever the value is changed
                   notifier = function(value)
                   end
-                }
-              },
+                } --close curve valuefield
+              },  --close curve valuefield aligner
               
               vb:horizontal_aligner { --aligns curve slider in column
-                mode = "center",
-                            
+                mode = "center",                            
                 vb:minislider {    
                   id = "curve_slider", 
                   tooltip = "Curve", 
@@ -2424,20 +2386,12 @@ local function show_window()
                     end
                   end    
                 }          
-              },
+              },  --close curve slider aligner
               
-              vb:horizontal_aligner {
-                mode = "justify",
-              
-                --[[vb:vertical_aligner {
-                  mode = "bottom",
-                  vb:space{height = 20},
-                  vb:bitmap{bitmap = "Bitmaps/bl.bmp", mode = border_bmp_mode}
-                },--]]
-                
+              vb:horizontal_aligner { --aligns curve type selector
+                mode = "center",                
                 vb:vertical_aligner {
-                  mode = "top",
-                  
+                  mode = "top",                  
                   vb:row {                
                     vb:bitmap {
                       id = "curve_type_1",
@@ -2464,60 +2418,29 @@ local function show_window()
                       end
                     },
                     
-                    vb:space {
-                      height = 24,
-                    }
-                                        
-                  },  --close row
+                    vb:space{height = 24},                                        
+                  },  --close curve type row
                   
-                  vb:space {
-                    height = default_gap
-                  }
-                  
-                },  --close vertical aligner
-                                  
-                --[[vb:vertical_aligner {
-                  mode = "bottom",
-                  vb:space{height = 20},
-                  vb:bitmap{bitmap = "Bitmaps/br.bmp", mode = border_bmp_mode}
-                }--]]
-                  
-              } --close horizontal aligner
+                  vb:space {height = default_gap}                  
+                } --close curve type vertical aligner                  
+              } --close curve type horizontal aligner
             }, --close curve controls column
           
         
             vb:column { --contains all offset-related controls
-              style = main_rack_style,
-              --margin = default_margin,
-              
-              vb:space {
-                height = default_gap
-              },
-              
-              --vb:space{height = default_margin},
+              style = main_rack_style,              
+              vb:space {height = default_gap},
             
-              vb:horizontal_aligner { --aligns icon in column
-                mode = "justify",
-                
-                --[[vb:vertical_aligner {
-                  mode = "top",
-                  vb:bitmap{bitmap = "Bitmaps/tl.bmp", mode = border_bmp_mode}
-                },--]]
-                
+              vb:horizontal_aligner { --aligns offset icon in column
+                mode = "justify",                
                 vb:bitmap { --icon at top of offset controls
                   bitmap = "Bitmaps/arrows.bmp",
                   mode = "body_color"
-                },
-                
-                --[[vb:vertical_aligner {
-                  mode = "top",
-                  vb:bitmap{bitmap = "Bitmaps/tr.bmp", mode = border_bmp_mode}
-                }--]]
+                }
               },
             
               vb:horizontal_aligner { --aligns offset valuefield in column
-                mode = "center",
-                
+                mode = "center",                
                 vb:valuefield {
                   id = "offset_text",
                   tooltip = "Type exact line offset values here!",
@@ -2541,7 +2464,7 @@ local function show_window()
                     return val
                   end,
                   
-                  --called when field is clicked, after tonumber is called, and after the notifier is called
+                  --called when field is clicked, after tonumber is called, and after notifier is called
                   --it converts the value to a formatted string to be displayed
                   tostring = function(value)
                     if debugvars.print_valuefield then print(("offset tostring = %.1f lines"):format(value)) end
@@ -2553,12 +2476,11 @@ local function show_window()
                   notifier = function(value)
                   if debugvars.print_valuefield then print("offset_text notifier") end
                   end
-                }
-              },
+                } --close offset valuefield
+              }, --close offset valuefield horizontal aligner
               
               vb:horizontal_aligner { --aligns offset slider in column
-                mode = "center",
-              
+                mode = "center",              
                 vb:minislider {    
                   id = "offset_slider", 
                   tooltip = "Offset", 
@@ -2575,16 +2497,10 @@ local function show_window()
                     end
                   end    
                 }
-              },
+              },  --close offset slider aligner
               
               vb:horizontal_aligner { --aligns offset rotary in column
-                mode = "justify",
-              
-                --[[vb:vertical_aligner {
-                  mode = "bottom",
-                  vb:bitmap{bitmap = "Bitmaps/bl.bmp", mode = border_bmp_mode}
-                },--]]
-              
+                mode = "justify",              
                 vb:rotary { 
                   id = "offset_multiplier_rotary", 
                   tooltip = "Offset Slider Range Extension", 
@@ -2600,56 +2516,15 @@ local function show_window()
                       queue_processing()
                     end
                   end 
-                }, --close rotary
-                
-                --[[vb:vertical_aligner {
-                  mode = "bottom",
-                  vb:bitmap{bitmap = "Bitmaps/br.bmp", mode = border_bmp_mode}
-                }--]]
-                
+                } --close rotary                
               }, --close rotary aligner
               
-              vb:space {
-                height = default_gap
-              }
-              
+              vb:space {height = default_gap}              
             } --close offset column
           } --close time/curve/offset aligner
         }, --close time/curve/offset column
         
-        vb:column {
-          vb:horizontal_aligner {
-            mode = "center",
-            --margin = default_margin,
-            
-            vb:bitmap {
-              tooltip = "Indicates if any notes currently being processed are colliding with other processed notes",
-              id = "our_notes_collisions_bitmap",
-              mode = "main_color",
-              bitmap = "Bitmaps/led0.bmp"
-            },
-            
-            vb:bitmap {
-              tooltip = "Indicates if any notes currently being processed are colliding with non-processed notes",
-              id = "wild_notes_collisions_bitmap",
-              mode = "main_color",
-              bitmap = "Bitmaps/led0.bmp"
-            }      
-          },
-          
-          vb:button { --help button
-            tooltip = "Help",
-            bitmap = "Bitmaps/question.bmp",
-            --width = "100%",
-            notifier = function()
-              app:open_url("https://xephyrpanda.wixsite.com/citrus64/reform")
-            end
-          }
-          
-        },
-        
         vb:column { --contains vol,pan,fx buttons
-          --margin = default_margin,
           
           vb:vertical_aligner {
             mode = "top",
@@ -2695,22 +2570,18 @@ local function show_window()
                 else vb.views.fxbutton.bitmap = "Bitmaps/fxbutton.bmp" end
                 queue_processing()
               end
-            }
-            
-          }
-        },
+            } --close fxbutton
+          } --close vol/pan/fx vertical aligner
+        },  --close vol/pan/fx column
         
         vb:column { --contains all volume-related controls
           id = "vol_column",
           style = re_rack_style,
-          --margin = default_margin,
-          visible = false,
-          
+          visible = false,          
           vb:space{height = default_margin},
           
           vb:horizontal_aligner { --aligns icon in column
-            mode = "center",
-            
+            mode = "center",            
             vb:bitmap { --icon at top of controls
               bitmap = "Bitmaps/vol.bmp",
               mode = "body_color"
@@ -3107,155 +2978,145 @@ local function show_window()
         
       }, --close row
       
+      --2ND ROW (contains controls for overflow/condense/redistribute, anchor, collisions, and help)
       vb:row {
-      
-        vb:horizontal_aligner { --aligns checkboxes and switches to window size
-          mode = "justify",
-          width = 220,
-          --margin = default_margin,
+        vb:column { --column containing overflow/condense/redistribute controls
+          style = "group",          
+          vb:button { 
+            id = "overflow_button", 
+            tooltip = "Overflow Mode - Notes that collide will move out into available empty columns",
+            bitmap = "Bitmaps/overflow.bmp",
+            width = 36,
+            height = 20,
+            notifier = function()
+              if vb_notifiers_on then
+                flags.overflow = not flags.overflow
+                if flags.overflow then
+                  vb.views.overflow_button.color = theme.selected_button_back
+                else 
+                  vb.views.overflow_button.color = {0,0,0}
+                end
+                queue_processing()
+              end
+            end 
+          },            
+          vb:button { 
+            id = "condense_button",
+            tooltip = "Condense Mode - Selected notes will try to fit into as few columns as possible",
+            bitmap = "Bitmaps/condense.bmp",
+            width = 36,
+            height = 20,
+            notifier = function()
+              if vb_notifiers_on then
+                flags.condense = not flags.condense
+                if flags.condense then
+                  vb.views.condense_button.color = theme.selected_button_back
+                else 
+                  vb.views.condense_button.color = {0,0,0}
+                end
+                queue_processing()
+              end
+            end 
+          },            
+          vb:button { 
+            id = "redistribute_button",
+            tooltip = "Redistribute Mode - The timing of selected notes will be redistributed evenly",
+            bitmap = "Bitmaps/redistribute.bmp",
+            width = 36,
+            height = 20,
+            notifier = function()
+              if vb_notifiers_on then
+                flags.redistribute = not flags.redistribute
+                if flags.redistribute then
+                  vb.views.redistribute_button.color = theme.selected_button_back
+                else 
+                  vb.views.redistribute_button.color = {0,0,0}
+                end
+                queue_processing()
+              end
+            end 
+          }
+        },  --close overflow/condense/redistribute column          
         
-          vb:column { --column containing our checkboxes
-            style = "group",
-          
-            vb:button { 
-              id = "overflow_button", 
-              tooltip = "Overflow Mode",
-              bitmap = "Bitmaps/overflow.bmp",
-              width = 36,
-              height = 20,
-              notifier = function()
+        vb:vertical_aligner { --aligns anchor switch to bottom
+          mode = "bottom",        
+          vb:column { --column containing our switches
+            style = "group",            
+            vb:switch {
+              id = "anchor_switch",
+              width = 64,
+              value = 1,
+              items = {"Top", "End"},
+              notifier = function(value)
                 if vb_notifiers_on then
-                  flags.overflow = not flags.overflow
-                  if flags.overflow then
-                    vb.views.overflow_button.color = theme.selected_button_back
-                  else 
-                    vb.views.overflow_button.color = {0,0,0}
-                  end
+                  anchor = value - 1
+                  reposition_controls()
                   queue_processing()
                 end
-              end 
-            },
-            
-            vb:button { 
-              id = "condense_button",
-              tooltip = "Condense Mode",
-              bitmap = "Bitmaps/condense.bmp",
-              width = 36,
-              height = 20,
-              notifier = function()
+              end
+            },              
+            vb:switch {
+              id = "anchor_type_switch",
+              width = 64,
+              value = 1,
+              items = {"Note", "Select"},
+              notifier = function(value)
                 if vb_notifiers_on then
-                  flags.condense = not flags.condense
-                  if flags.condense then
-                    vb.views.condense_button.color = theme.selected_button_back
-                  else 
-                    vb.views.condense_button.color = {0,0,0}
-                  end
+                  anchor_type = value
+                  update_start_pos()
                   queue_processing()
                 end
-              end 
-            },
-            
-            vb:button { 
-              id = "redistribute_button",
-              tooltip = "Redistribute Mode",
-              bitmap = "Bitmaps/redistribute.bmp",
-              width = 36,
-              height = 20,
-              notifier = function()
-                if vb_notifiers_on then
-                  flags.redistribute = not flags.redistribute
-                  if flags.redistribute then
-                    vb.views.redistribute_button.color = theme.selected_button_back
-                  else 
-                    vb.views.redistribute_button.color = {0,0,0}
-                  end
-                  queue_processing()
-                end
-              end 
+              end
             }
-          },  --close checkbox column
+          } --close anchor column
+        },  --close anchor vertical aligner
+        
+        vb:space{width = 45},
           
-          vb:vertical_aligner { --aligns our switches to the bottom of the window
-            mode = "bottom",
-            --margin = default_margin,
-            
-            vb:row {
-            
-              vb:column {
-                style = "group",
-                --margin = default_margin,
-                
-                vb:switch {
-                  width = 94,
-                  id = "our_notes_flag_switch", 
-                  tooltip = "In the event of our processed notes colliding with each other, which one should overwrite the other?",
-                  items = {"Earlier","Later"},
-                  value = 1, 
-                  notifier = function(value)
-                    if vb_notifiers_on then
-                      if value == 1 then flags.our_notes = false
-                      elseif value == 2 then flags.our_notes = true end
-                      queue_processing()
-                    end
-                  end 
-                },
-                
-                vb:switch {
-                  width = 94,
-                  id = "wild_notes_flag_switch", 
-                  tooltip = "In the event of our processed notes colliding with notes outside of our selection, which one should overwrite the other?",
-                  items = {"Not","Selected"},
-                  value = 1, 
-                  notifier = function(value)
-                    if vb_notifiers_on then
-                      if value == 1 then flags.wild_notes = false
-                      elseif value == 2 then flags.wild_notes = true end
-                      queue_processing()
-                    end
-                  end 
-                }
-              },
-            
-              vb:horizontal_aligner {
-                mode = "right",
-              
-                vb:column { --column containing our switches
-                  style = "group",
-                  --margin = default_margin,
-                
-                  vb:switch {
-                    id = "anchor_switch",
-                    width = 64,
-                    value = 1,
-                    items = {"Top", "End"},
-                    notifier = function(value)
-                      if vb_notifiers_on then
-                        anchor = value - 1
-                        reposition_controls()
-                        queue_processing()
-                      end
-                    end
-                  },
-                  
-                  vb:switch {
-                    id = "anchor_type_switch",
-                    width = 64,
-                    value = 1,
-                    items = {"Note", "Select"},
-                    notifier = function(value)
-                      if vb_notifiers_on then
-                        anchor_type = value
-                        update_start_pos()
-                        queue_processing()
-                      end
-                    end
-                  }
-                } --close switches column
-              } --close switches horizontal aligner
-            } --close switches vertical aligner
-          } --close row
-        } --close checkbox/switches horizontal aligner
-      } --close row
+        vb:column { --column containing collision/help controls
+          width = 60,
+          vb:row {
+            height = 44,
+            vb:bitmap {
+              tooltip = tooltips.collision_sel[1],
+              id = "collision_sel_bmp",
+              mode = "main_color",
+              bitmap = "Bitmaps/collision_sel_0.bmp",
+              active = false,
+              notifier = function()
+                if vb_notifiers_on then
+                  flags.our_notes = not flags.our_notes
+                  queue_processing()
+                end
+              end
+            },                
+            vb:bitmap {
+              tooltip = tooltips.collision_wild[1],
+              id = "collision_wild_bmp",
+              mode = "main_color",
+              bitmap = "Bitmaps/collision_wild_0.bmp",
+              active = false,
+              notifier = function()
+                if vb_notifiers_on then
+                  flags.wild_notes = not flags.wild_notes
+                  queue_processing()
+                end
+              end
+            } 
+          }, --close collision row
+        
+          vb:horizontal_aligner {
+            mode = "right",
+            vb:button {
+              tooltip = "Help",
+              bitmap = "Bitmaps/question.bmp",
+              notifier = function()
+                app:open_url("https://xephyrpanda.wixsite.com/citrus64/reform")
+              end
+            } --close help button
+          } --close help vertical aligner
+        } --close collision/help column
+      } --close 2nd row
     } --close window_content column
     
     if debugvars.extra_curve_controls then    
