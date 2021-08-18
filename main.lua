@@ -250,6 +250,89 @@ local anchor = 0  -- 0 = top, 1 = bottom
 local anchor_type = 1 -- 1 = note, 2 = selection
 
 
+--[[FUNCTIONS INDEX
+
+--NOTIFIERS/GETTERS & INITIALIZATION--
+reset_variables()
+get_theme_data()
+set_theme_colors()
+update_valuefields()
+update_anchor_bitmaps()
+update_collision_bitmaps()
+reset_view()
+deactivate_controls()
+activate_controls()
+release_document()
+new_document()
+add_document_notifiers()
+add_pattern_length_notifier(p)
+get_pattern_length_at_seq(s)
+sequence_count_notifier() - used in get_sequence_length()
+get_sequence_length()
+track_count_notifier() - used in get_track_count()
+get_track_count()
+add_visible_note_columns_notifier(t)
+get_visible_note_columns(t)
+add_visible_effect_columns_notifier(t)
+get_visible_effect_columns(t)
+
+--MATH/UTILITY FUNCTIONS--
+remap_range(val,lo1,hi1,lo2,hi2) - converts a value in range lo1-hi1 to lo2-hi2
+sign(number) - returns 1 or -1 depending on the +/- of a number
+
+--SONG DATA MANIPULTAION--
+store_note(s,p,t,c,l,counter)
+get_selection()
+find_selected_notes()
+calculate_note_placements()
+get_index(s,t,l,c)
+find_correct_index(s,p,t,l,c)
+set_track_visibility(t)
+set_note_column_values(column,vals)
+restore_old_note(counter)
+is_wild(index,counter)
+get_existing_note(index,counter)
+update_current_note_location(counter,new_index)
+add_to_placed_notes(index,counter)
+apply_curve(placement,type)
+place_new_note(counter)
+update_start_pos()
+
+--BEZIER CURVES--
+binom(n,k) - BINOMIAL COEFFECIENT
+bern(val,v,n) - BERNSTEIN BASIS POLYNOMIAL
+get_curve(t,points)
+init_buffers(i)
+calculate_curve(i)
+rasterize_curve(i)
+update_curve_grid(i)
+update_curve_display(i)
+update_all_curve_displays()
+
+--MAIN PROCESSING--
+apply_reform()
+apply_reform_notifier()
+add_reform_idle_notifier()
+queue_processing()
+
+--HOTKEYS--
+space_key()
+shift_space_key()
+up_key()
+down_key()
+left_key()
+right_key()
+tab_key()
+shift_tab_key()
+
+--VIEWBUILDER--
+show_window()
+key_handler(dialog,key)
+reform_main()
+restore_reform_window()
+--]]
+
+
 --RESET VARIABLES------------------------------
 local function reset_variables()
   
@@ -262,30 +345,14 @@ local function reset_variables()
   table.clear(selected_notes)
   table.clear(placed_notes)
   
-  time = 0
-  time_multiplier = 1
-  time_was_typed = false
-  typed_time = 1
-  
-  curve_intensity = {0,0,0,0}
-  
-  offset = 0
-  offset_multiplier = 1
-  offset_was_typed = false
-  typed_offset = 0
-  
-  anchor = 0
-  anchor_type = 1
-  
-  earliest_placement = math.huge
-  latest_placement = 0
+  start_pos = renoise.SongPos()
   
   flags = {
     overflow = true,
     condense = false,
     redistribute = false,
-    our_notes = false,
-    wild_notes = true,
+    our_notes = false,  --true == keep later notes, false == keep earlier notes
+    wild_notes = true,  --true == keep selected notes, false == keep wild notes
     
     vol = false,
     vol_re = false,
@@ -308,6 +375,92 @@ local function reset_variables()
     fx_min = 0,
     fx_max = 255,  
   }
+  
+  time = 0
+  time_multiplier = 1
+  time_was_typed = false
+  typed_time = 1
+  
+  curve_intensity = {0, 0, 0, 0}  --time,vol,pan,fx
+  curve_type = {1, 1, 1, 1}
+  curve_points = {
+    
+    { --time
+      sampled = {},
+      default = {
+        points = {{0,1,1},{1,0,1}},
+        samplesize = 2
+      },
+      {
+        positive = {{0,1,1},{1,1,1},{1,0,1}},
+        negative = {{0,1,1},{0,0,1},{1,0,1}},
+        samplesize = 19
+      },
+      {
+        positive = {{0,1,1},{0.5,1,4},{0.5,0,4},{1,0,1}},
+        negative = {{0,1,1},{0,0.5,4},{1,0.5,4},{1,0,1}},
+        samplesize = 18
+      }
+    },
+    
+    { --vol
+      sampled = {},
+      default = {
+        points = {{0,0,1},{1,1,1}},
+        samplesize = 2
+      },
+      {
+        positive = {{0,0,1},{0,1,1},{1,1,1}},
+        negative = {{0,0,1},{1,0,1},{1,1,1}},
+        samplesize = 10
+      }
+    },
+    
+    { --pan
+      sampled = {},
+      default = {
+        points = {{0,0,1},{1,1,1}},
+        samplesize = 2
+      },
+      {
+        positive = {{0,0,1},{0,1,1},{1,1,1}},
+        negative = {{0,0,1},{1,0,1},{1,1,1}},
+        samplesize = 10
+      }
+    },
+    
+      { --fx
+      sampled = {},
+      default = {
+        points = {{0,0,1},{1,1,1}},
+        samplesize = 2
+      },
+      {
+        positive = {{0,0,1},{0,1,1},{1,1,1}},
+        negative = {{0,0,1},{1,0,1},{1,1,1}},
+        samplesize = 10
+      }
+    },
+    
+  }
+  curve_displays = {
+    { xsize = 16, ysize = 16, display = {}, buffer1 = {}, buffer2 = {} }, --time
+    { xsize = 11, ysize = 11, display = {}, buffer1 = {}, buffer2 = {} }, --vol
+    { xsize = 11, ysize = 11, display = {}, buffer1 = {}, buffer2 = {} }, --pan
+    { xsize = 11, ysize = 11, display = {}, buffer1 = {}, buffer2 = {} }, --fx
+  }
+  drawmode = "line"
+  
+  offset = 0
+  offset_multiplier = 1
+  offset_was_typed = false
+  typed_offset = 0
+  
+  anchor = 0
+  anchor_type = 1
+  
+  earliest_placement = math.huge
+  latest_placement = 0
   
   return true
 end
@@ -352,14 +505,114 @@ local function set_theme_colors()
   vb.views.vol_re_button.color = flags.vol_re and theme.selected_button_back or {0,0,0}
   vb.views.pan_re_button.color = flags.pan_re and theme.selected_button_back or {0,0,0}
   vb.views.fx_re_button.color = flags.fx_re and theme.selected_button_back or {0,0,0}
-  
-  --vb.views.anchorTL.color = anchor == 0 and anchor_type == 1 and theme.selected_button_back or {0,0,0}
-  --vb.views.anchorTR.color = anchor == 0 and anchor_type == 2 and theme.selected_button_back or {0,0,0}
-  --vb.views.anchorBL.color = anchor == 1 and anchor_type == 1 and theme.selected_button_back or {0,0,0}
-  --vb.views.anchorBR.color = anchor == 1 and anchor_type == 2 and theme.selected_button_back or {0,0,0}
 
   return true
 end
+
+
+--UPDATE VALUEFIELDS---------------------------------
+local function update_valuefields()
+  
+  vb_notifiers_on = false
+  
+  if time_was_typed then
+    vb.views.time_text.value = typed_time
+  else
+    vb.views.time_text.value = time * time_multiplier + 1
+  end
+  
+  if offset_was_typed then
+    vb.views.offset_text.value = typed_offset
+  else
+    vb.views.offset_text.value = offset * offset_multiplier
+  end
+  
+  if debugvars.extra_curve_controls then vb.views.samplesize_text.value = curve_points[1][curve_type[1]].samplesize end
+  
+  vb_notifiers_on = true
+  
+  --print("update_valuefields() end")
+  
+  return true
+end
+
+--UPDATE ANCHOR BITMAPS---------------------------------
+local function update_anchor_bitmaps()
+
+  --anchor  -- 0 = top, 1 = bottom
+  --anchor_type -- 1 = note, 2 = selection
+  
+  if anchor == 0 then
+    if anchor_type == 1 then
+      vb.views.anchorTL.bitmap = "Bitmaps/anchorTL2.bmp"
+      vb.views.anchorTR.bitmap = "Bitmaps/anchorTR1.bmp"
+      vb.views.anchorBL.bitmap = "Bitmaps/anchorBL1.bmp"
+      vb.views.anchorBR.bitmap = "Bitmaps/anchorBR1.bmp"
+    elseif anchor_type == 2 then
+      vb.views.anchorTL.bitmap = "Bitmaps/anchorTL1.bmp"
+      vb.views.anchorTR.bitmap = "Bitmaps/anchorTR2.bmp"
+      vb.views.anchorBL.bitmap = "Bitmaps/anchorBL1.bmp"
+      vb.views.anchorBR.bitmap = "Bitmaps/anchorBR1.bmp"
+    end
+  elseif anchor == 1 then
+    if anchor_type == 1 then
+      vb.views.anchorTL.bitmap = "Bitmaps/anchorTL1.bmp"
+      vb.views.anchorTR.bitmap = "Bitmaps/anchorTR1.bmp"
+      vb.views.anchorBL.bitmap = "Bitmaps/anchorBL2.bmp"
+      vb.views.anchorBR.bitmap = "Bitmaps/anchorBR1.bmp"    
+    elseif anchor_type == 2 then
+      vb.views.anchorTL.bitmap = "Bitmaps/anchorTL1.bmp"
+      vb.views.anchorTR.bitmap = "Bitmaps/anchorTR1.bmp"
+      vb.views.anchorBL.bitmap = "Bitmaps/anchorBL1.bmp"
+      vb.views.anchorBR.bitmap = "Bitmaps/anchorBR2.bmp"
+    end
+  end
+
+  return true
+end
+
+--UPDATE COLLISION BITMAPS--------------------------------
+local function update_collision_bitmaps()
+
+  local our_collisions,wild_collisions = false,false
+  
+  for k,v in pairs(note_collisions.ours) do
+    if v then our_collisions = true end
+  end
+
+  for k,v in pairs(note_collisions.wild) do
+    if v then wild_collisions = true end
+  end
+  
+  if our_collisions then
+    vb.views.collision_sel_bmp.tooltip = tooltips.collision_sel[2] .. tooltips.collision_sel[3]
+    vb.views.collision_sel_bmp.active = true
+    vb.views.collision_sel_bmp.mode = "button_color"
+    if not flags.our_notes then vb.views.collision_sel_bmp.bitmap = "Bitmaps/collision_sel_1.bmp"
+    else vb.views.collision_sel_bmp.bitmap = "Bitmaps/collision_sel_2.bmp"
+    end
+  else
+    vb.views.collision_sel_bmp.tooltip = tooltips.collision_sel[1]
+    vb.views.collision_sel_bmp.active = false
+    vb.views.collision_sel_bmp.bitmap = "Bitmaps/collision_sel_0.bmp"
+    vb.views.collision_sel_bmp.mode = "main_color"
+  end
+  
+  if wild_collisions then
+    vb.views.collision_wild_bmp.tooltip = tooltips.collision_wild[2] .. tooltips.collision_wild[3]
+    vb.views.collision_wild_bmp.active = true
+    vb.views.collision_wild_bmp.mode = "button_color"
+    if flags.wild_notes then vb.views.collision_wild_bmp.bitmap = "Bitmaps/collision_wild_1.bmp"
+    else vb.views.collision_wild_bmp.bitmap = "Bitmaps/collision_wild_2.bmp"
+    end
+  else
+    vb.views.collision_wild_bmp.tooltip = tooltips.collision_wild[1]
+    vb.views.collision_wild_bmp.active = false
+    vb.views.collision_wild_bmp.bitmap = "Bitmaps/collision_wild_0.bmp"
+    vb.views.collision_wild_bmp.mode = "main_color"
+  end
+
+end 
 
 --RESET VIEW------------------------------------------
 local function reset_view()
@@ -368,16 +621,29 @@ local function reset_view()
   
   vb.views.time_text.value = 1
   vb.views.time_slider.value = 0
-  vb.views.time_multiplier_rotary.value = time_multiplier
-  vb.views.offset_text.value = offset
-  vb.views.offset_slider.value = offset
-  vb.views.offset_multiplier_rotary.value = offset_multiplier
-  vb.views.vol_min_box.value = flags.vol_orig_min
-  vb.views.vol_max_box.value = flags.vol_orig_max
-  vb.views.pan_min_box.value = flags.pan_orig_min
-  vb.views.pan_max_box.value = flags.pan_orig_max
-  vb.views.fx_min_box.value = flags.fx_orig_min
-  vb.views.fx_max_box.value = flags.fx_orig_max
+  vb.views.time_multiplier_rotary.value = 1
+  vb.views.curve_text.value = 0
+  vb.views.curve_slider.value = 0
+  vb.views.curve_type_1.bitmap = "Bitmaps/curve1pressed.bmp"
+  vb.views.curve_type_2.bitmap = "Bitmaps/curve2.bmp"
+  vb.views.offset_text.value = 0
+  vb.views.offset_slider.value = 0
+  vb.views.offset_multiplier_rotary.value = 1
+  
+  vb.views.vol_max_box.value = flags.vol_orig_min
+  vb.views.vol_slider.value = 0
+  vb.views.vol_min_box.value = flags.vol_orig_max
+  
+  vb.views.pan_max_box.value = flags.pan_orig_min
+  vb.views.pan_slider.value = 0
+  vb.views.pan_min_box.value = flags.pan_orig_max
+  
+  vb.views.fx_max_box.value = flags.fx_orig_min
+  vb.views.fx_slider.value = 0
+  vb.views.fx_min_box.value = flags.fx_orig_max
+  
+  vb.views.collision_sel_bmp.bitmap = "Bitmaps/collision_sel_0.bmp"
+  vb.views.collision_wild_bmp.bitmap = "Bitmaps/collision_wild_0.bmp"
   
   vb.views.vol_column.visible = false
   vb.views.volbutton.bitmap = "Bitmaps/volbutton.bmp"
@@ -389,6 +655,7 @@ local function reset_view()
   vb.views.fxbutton.bitmap = "Bitmaps/fxbutton.bmp"
   
   set_theme_colors()
+  update_anchor_bitmaps()
   
   vb_notifiers_on = true
 
@@ -398,16 +665,48 @@ end
 --DEACTIVATE CONTROLS-------------------------------------
 local function deactivate_controls()
   
-  if window_obj then
+  if window_obj then    
     vb.views.time_text.active = false
     vb.views.time_slider.active = false
     vb.views.time_multiplier_rotary.active = false
+    vb.views.curve_text.active = false
+    vb.views.curve_slider.active = false
+    vb.views.curve_type_1.active = false
+    vb.views.curve_type_2.active = false
     vb.views.offset_text.active = false
     vb.views.offset_slider.active = false
     vb.views.offset_multiplier_rotary.active = false
+    
+    vb.views.vol_max_box.active = false
+    vb.views.vol_slider.active = false
+    vb.views.vol_min_box.active = false
+    vb.views.vol_re_button.active = false
+    
+    vb.views.pan_max_box.active = false
+    vb.views.pan_slider.active = false
+    vb.views.pan_min_box.active = false
+    vb.views.pan_re_button.active = false
+    
+    vb.views.fx_max_box.active = false
+    vb.views.fx_slider.active = false
+    vb.views.fx_min_box.active = false
+    vb.views.fx_re_button.active = false
+    
     vb.views.overflow_button.active = false
     vb.views.condense_button.active = false
     vb.views.redistribute_button.active = false
+    
+    vb.views.collision_sel_bmp.active = false
+    vb.views.collision_wild_bmp.active = false
+    
+    vb.views.anchorTL.active = false
+    vb.views.anchorTR.active = false
+    vb.views.anchorBL.active = false
+    vb.views.anchorBR.active = false
+    
+    vb.views.volbutton.active = false
+    vb.views.panbutton.active = false
+    vb.views.fxbutton.active = false    
   end
 
   return true
@@ -420,12 +719,44 @@ local function activate_controls()
     vb.views.time_text.active = true
     vb.views.time_slider.active = true
     vb.views.time_multiplier_rotary.active = true
+    vb.views.curve_text.active = true
+    vb.views.curve_slider.active = true
+    vb.views.curve_type_1.active = true
+    vb.views.curve_type_2.active = true
     vb.views.offset_text.active = true
     vb.views.offset_slider.active = true
     vb.views.offset_multiplier_rotary.active = true
+    
+    vb.views.vol_max_box.active = true
+    vb.views.vol_slider.active = true
+    vb.views.vol_min_box.active = true
+    vb.views.vol_re_button.active = true
+    
+    vb.views.pan_max_box.active = true
+    vb.views.pan_slider.active = true
+    vb.views.pan_min_box.active = true
+    vb.views.pan_re_button.active = true
+    
+    vb.views.fx_max_box.active = true
+    vb.views.fx_slider.active = true
+    vb.views.fx_min_box.active = true
+    vb.views.fx_re_button.active = true
+    
     vb.views.overflow_button.active = true
     vb.views.condense_button.active = true
     vb.views.redistribute_button.active = true
+    
+    vb.views.collision_sel_bmp.active = true
+    vb.views.collision_wild_bmp.active = true
+    
+    vb.views.anchorTL.active = true
+    vb.views.anchorTR.active = true
+    vb.views.anchorBL.active = true
+    vb.views.anchorBR.active = true
+    
+    vb.views.volbutton.active = true
+    vb.views.panbutton.active = true
+    vb.views.fxbutton.active = true
   end
 
   return true
@@ -493,259 +824,6 @@ local function add_document_notifiers()
     if debugvars.print_notifier_attach then print("new document notifier attached!") end    
   end  
 
-  return true
-end
-
---STORE NOTE--------------------------------------------
-local function store_note(s,p,t,c,l,counter)
-  
-  local column = song:pattern(p):track(t):line(l):note_column(c)
-  
-  if not column.is_empty then
-    
-    --create a table to store our note info
-    selected_notes[counter] = {}
-    
-    --record the original index where the note came from
-    selected_notes[counter].original_index = {
-      s = s,
-      p = p,
-      t = t,
-      c = c,
-      l = l
-    }
-    
-    --store all of the values for this note column (note,instr,vol,pan,dly,fx)
-    selected_notes[counter].note_value = column.note_value
-    selected_notes[counter].instrument_value = column.instrument_value
-    selected_notes[counter].volume_value = column.volume_value 
-    selected_notes[counter].panning_value = column.panning_value 
-    selected_notes[counter].delay_value = column.delay_value 
-    selected_notes[counter].effect_number_value = column.effect_number_value 
-    selected_notes[counter].effect_amount_value = column.effect_amount_value
-    
-    --initialize the location of the note
-    selected_notes[counter].current_location = {
-      s = s,
-      p = p,
-      t = t,
-      c = c,
-      l = l
-    }
-    
-    --initialize our relative line position
-    selected_notes[counter].rel_line_pos = l
-
-    --initalize our flags so that the note will leave an empty space behind when it moves
-    selected_notes[counter].flags = {write = true, clear = true, restore = false}
-    
-    --increment our index counter by one, as we have just finished storing one new note in our table
-    counter = counter + 1
-  
-  end
-  
-  return counter
-end
-
---GET SELECTION-----------------------------------------
-local function get_selection()
-
-  --get selection box info (sequence/pattern selection is in, and selection box range)
-  selected_seq = song.selected_sequence_index
-  selected_pattern = song.sequencer:pattern(selected_seq)
-  selection = song.selection_in_pattern
-  
-  --if there is no selection box, then we show an error, and disallow further operations
-  if not selection then
-    app:show_error("No selection has been made")
-    valid_selection = false
-    deactivate_controls()
-    return false
-  end
-
-  return true
-end
-
---FIND NOTES IN SELECTION---------------------------------------------
-local function find_selected_notes()
-  
-  --determine which note columns are visible
-  for t = selection.start_track, selection.end_track do  
-    originally_visible_columns[1][t] = song:track(t).visible_note_columns
-    originally_visible_columns[2][t] = song:track(t).volume_column_visible
-    originally_visible_columns[3][t] = song:track(t).panning_column_visible
-    originally_visible_columns[4][t] = song:track(t).delay_column_visible
-    originally_visible_columns[5][t] = song:track(t).sample_effects_column_visible
-  end
-    
-  --find out what column to end on when working in the first track, based on how many tracks are selected total
-  if selection.end_track - selection.start_track == 0 then
-    column_to_end_on_in_first_track = math.min(selection.end_column, originally_visible_columns[1][selection.start_track])
-  else
-    column_to_end_on_in_first_track = originally_visible_columns[1][selection.start_track]
-  end
-  
-  local counter = 1
-  table.clear(is_note_track)
-  
-  --scan through lines, tracks, and columns and store all notes to be reformed
-  for l = selection.start_line, selection.end_line do 
-     
-    --work on first track
-    if song:track(selection.start_track).type == 1 then
-      is_note_track[selection.start_track] = true
-      for c = selection.start_column, column_to_end_on_in_first_track do
-        counter = store_note(selected_seq,selected_pattern,selection.start_track,c,l,counter)
-      end
-    end
-      
-    --work on middle track(s)
-    if selection.end_track - selection.start_track > 1 then
-      for t = selection.start_track + 1, selection.end_track - 1 do
-        if song:track(t).type == 1 then
-          is_note_track[t] = true
-          for c = 1, originally_visible_columns[1][t] do        
-            counter = store_note(selected_seq,selected_pattern,t,c,l,counter)  
-          end 
-        end
-      end
-    end
-      
-    --work on last track--
-    if selection.end_track - selection.start_track > 0 then
-      if song:track(selection.end_track).type == 1  then
-        is_note_track[selection.end_track] = true
-        for c = 1, math.min(selection.end_column, originally_visible_columns[1][selection.end_track]) do
-          counter = store_note(selected_seq,selected_pattern,selection.end_track,c,l,counter)
-        end
-      end
-    end
-    
-  end
-  
-  --if no content was found in the selection, then we should not continue operations
-  if counter == 1 then
-    valid_selection = false
-    deactivate_controls()
-    app:show_error("The selection is empty!")
-    return false
-  end
-  
-  --if there was content in the selection, we will set valid_selection to true, and continue
-  valid_selection = true
-    
-  return true
-end
-
---REMAP RANGE-------------------------------------------------------
-local function remap_range(val,lo1,hi1,lo2,hi2)
-  
-  if lo1 == hi1 then return lo2 end
-  return lo2 + (hi2 - lo2) * ((val - lo1) / (hi1 - lo1))
-end
-
---CALCULATE NOTE PLACEMENTS------------------------------------------
-local function calculate_note_placements()
-  
-  --total range is calculated from the first line, until FF of the last line
-  total_delay_range = (selection.end_line - selection.start_line) * 256 + 255
-  total_line_range = total_delay_range / 256
-  
-  --calculate original note placements in our selection range for each note
-  for k,note in ipairs(selected_notes) do
-    
-    local line_difference = note.original_index.l - selection.start_line 
-     
-    local delay_difference = note.delay_value + (line_difference*256)
-      
-    local note_place = delay_difference
-    
-    --store the placement value for this note (a value from 0 - total_delay_range)
-    selected_notes[k].placement = note_place
-    
-    --record the earliest and latest note placements in the selection
-    if note_place < earliest_placement then earliest_placement = note_place end
-    if note_place > latest_placement then latest_placement = note_place end
-  
-  end
-  
-  --calculate redistributed placements in selection range
-  local amount_of_notes = #selected_notes
-  for k,note in ipairs(selected_notes) do
-    note.redistributed_placement_in_sel_range = remap_range(
-      (k - 1) / amount_of_notes,
-      0,
-      total_line_range / (selection.end_line - selection.start_line + 1),
-      0,
-      total_delay_range)
-  end
-  
-  --calculate redistributed placements in note range
-  for k,note in ipairs(selected_notes) do
-    note.redistributed_placement_in_note_range = remap_range(
-      (k - 1) / (amount_of_notes - 1),
-      0,
-      1,
-      earliest_placement,
-      latest_placement)
-      
-      --if there is only one note, we need to set it here, or it will be left as nan
-      if amount_of_notes == 1 then note.redistributed_placement_in_note_range = earliest_placement end
-  end
-  
-  --find the least and greatest volume values in selection
-  local least_vol,greatest_vol = 128,0  
-  for k,note in ipairs(selected_notes) do
-    if note.volume_value > greatest_vol and note.volume_value <= 255 then
-      greatest_vol = note.volume_value 
-    end
-    if note.volume_value < least_vol and note.volume_value <= 255 then
-      least_vol = note.volume_value
-    end
-  end
-  if least_vol == 255 then least_vol = 128 end
-  if greatest_vol == 255 then greatest_vol = 128 end
-  flags.vol_orig_min, flags.vol_min = least_vol, least_vol
-  flags.vol_orig_max, flags.vol_max = greatest_vol, greatest_vol
-  --print("least_vol: " .. least_vol)
-  --print("greatest_vol: " .. greatest_vol)
-  
-  --find the least and greatest panning values in selection
-  local least_pan,greatest_pan = 128,0  
-  for k,note in ipairs(selected_notes) do    
-    local pan_val = note.panning_value
-    
-    if pan_val == 255 then pan_val = 64 end
-    
-    if pan_val > greatest_pan and pan_val <= 128 then
-      greatest_pan = pan_val
-    end
-    if pan_val < least_pan and pan_val <= 128 then
-      least_pan = pan_val
-    end
-  end
-  flags.pan_orig_min, flags.pan_min = least_pan, least_pan
-  flags.pan_orig_max, flags.pan_max = greatest_pan, greatest_pan
-  --print("least_pan: " .. least_pan)
-  --print("greatest_pan: " .. greatest_pan)
-  
-    --find the least and greatest fx values in selection
-  local least_fx,greatest_fx = 255,0  
-  for k,note in ipairs(selected_notes) do    
-    local fx_val = note.effect_amount_value
-    
-    if fx_val > greatest_fx and fx_val <= 255 then
-      greatest_fx = fx_val
-    end
-    if fx_val < least_fx and fx_val <= 255 then
-      least_fx = fx_val
-    end
-  end
-  flags.fx_orig_min, flags.fx_min = least_fx, least_fx
-  flags.fx_orig_max, flags.fx_max = greatest_fx, greatest_fx
-  --print("least_fx: " .. least_fx)
-  --print("greatest_fx: " .. greatest_fx)
-  
   return true
 end
 
@@ -957,6 +1035,265 @@ local function get_visible_effect_columns(t)
   end
   
   return visible_effect_columns[t].amount
+end
+
+--REMAP RANGE-------------------------------------------------------
+local function remap_range(val,lo1,hi1,lo2,hi2)
+  
+  if lo1 == hi1 then return lo2 end
+  return lo2 + (hi2 - lo2) * ((val - lo1) / (hi1 - lo1))
+end
+
+--SIGN------------------------------------
+local function sign(number)
+
+  return number > 0 and 1 or (number == 0 and 0 or -1)  
+end
+
+--STORE NOTE--------------------------------------------
+local function store_note(s,p,t,c,l,counter)
+  
+  local column = song:pattern(p):track(t):line(l):note_column(c)
+  
+  if not column.is_empty then
+    
+    --create a table to store our note info
+    selected_notes[counter] = {}
+    
+    --record the original index where the note came from
+    selected_notes[counter].original_index = {
+      s = s,
+      p = p,
+      t = t,
+      c = c,
+      l = l
+    }
+    
+    --store all of the values for this note column (note,instr,vol,pan,dly,fx)
+    selected_notes[counter].note_value = column.note_value
+    selected_notes[counter].instrument_value = column.instrument_value
+    selected_notes[counter].volume_value = column.volume_value 
+    selected_notes[counter].panning_value = column.panning_value 
+    selected_notes[counter].delay_value = column.delay_value 
+    selected_notes[counter].effect_number_value = column.effect_number_value 
+    selected_notes[counter].effect_amount_value = column.effect_amount_value
+    
+    --initialize the location of the note
+    selected_notes[counter].current_location = {
+      s = s,
+      p = p,
+      t = t,
+      c = c,
+      l = l
+    }
+    
+    --initialize our relative line position
+    selected_notes[counter].rel_line_pos = l
+
+    --initalize our flags so that the note will leave an empty space behind when it moves
+    selected_notes[counter].flags = {write = true, clear = true, restore = false}
+    
+    --increment our index counter by one, as we have just finished storing one new note in our table
+    counter = counter + 1
+  
+  end
+  
+  return counter
+end
+
+--GET SELECTION-----------------------------------------
+local function get_selection()
+
+  --get selection box info (sequence/pattern selection is in, and selection box range)
+  selected_seq = song.selected_sequence_index
+  selected_pattern = song.sequencer:pattern(selected_seq)
+  selection = song.selection_in_pattern
+  
+  --if there is no selection box, then we show an error, and disallow further operations
+  if not selection then
+    app:show_error("No selection has been made")
+    valid_selection = false
+    deactivate_controls()
+    return false
+  end
+
+  return true
+end
+
+--FIND NOTES IN SELECTION---------------------------------------------
+local function find_selected_notes()
+  
+  --determine which note columns are visible
+  for t = selection.start_track, selection.end_track do  
+    originally_visible_columns[1][t] = song:track(t).visible_note_columns
+    originally_visible_columns[2][t] = song:track(t).volume_column_visible
+    originally_visible_columns[3][t] = song:track(t).panning_column_visible
+    originally_visible_columns[4][t] = song:track(t).delay_column_visible
+    originally_visible_columns[5][t] = song:track(t).sample_effects_column_visible
+  end
+    
+  --find out what column to end on when working in the first track, based on how many tracks are selected total
+  if selection.end_track - selection.start_track == 0 then
+    column_to_end_on_in_first_track = math.min(selection.end_column, originally_visible_columns[1][selection.start_track])
+  else
+    column_to_end_on_in_first_track = originally_visible_columns[1][selection.start_track]
+  end
+  
+  local counter = 1
+  table.clear(is_note_track)
+  
+  --scan through lines, tracks, and columns and store all notes to be reformed
+  for l = selection.start_line, selection.end_line do 
+     
+    --work on first track
+    if song:track(selection.start_track).type == 1 then
+      is_note_track[selection.start_track] = true
+      for c = selection.start_column, column_to_end_on_in_first_track do
+        counter = store_note(selected_seq,selected_pattern,selection.start_track,c,l,counter)
+      end
+    end
+      
+    --work on middle track(s)
+    if selection.end_track - selection.start_track > 1 then
+      for t = selection.start_track + 1, selection.end_track - 1 do
+        if song:track(t).type == 1 then
+          is_note_track[t] = true
+          for c = 1, originally_visible_columns[1][t] do        
+            counter = store_note(selected_seq,selected_pattern,t,c,l,counter)  
+          end 
+        end
+      end
+    end
+      
+    --work on last track--
+    if selection.end_track - selection.start_track > 0 then
+      if song:track(selection.end_track).type == 1  then
+        is_note_track[selection.end_track] = true
+        for c = 1, math.min(selection.end_column, originally_visible_columns[1][selection.end_track]) do
+          counter = store_note(selected_seq,selected_pattern,selection.end_track,c,l,counter)
+        end
+      end
+    end
+    
+  end
+  
+  --if no content was found in the selection, then we should not continue operations
+  if counter == 1 then
+    valid_selection = false
+    deactivate_controls()
+    app:show_error("The selection is empty!")
+    return false
+  end
+  
+  --if there was content in the selection, we will set valid_selection to true, and continue
+  valid_selection = true
+    
+  return true
+end
+
+--CALCULATE NOTE PLACEMENTS------------------------------------------
+local function calculate_note_placements()
+  
+  --total range is calculated from the first line, until FF of the last line
+  total_delay_range = (selection.end_line - selection.start_line) * 256 + 255
+  total_line_range = total_delay_range / 256
+  
+  --calculate original note placements in our selection range for each note
+  for k,note in ipairs(selected_notes) do
+    
+    local line_difference = note.original_index.l - selection.start_line 
+     
+    local delay_difference = note.delay_value + (line_difference*256)
+      
+    local note_place = delay_difference
+    
+    --store the placement value for this note (a value from 0 - total_delay_range)
+    selected_notes[k].placement = note_place
+    
+    --record the earliest and latest note placements in the selection
+    if note_place < earliest_placement then earliest_placement = note_place end
+    if note_place > latest_placement then latest_placement = note_place end
+  
+  end
+  
+  --calculate redistributed placements in selection range
+  local amount_of_notes = #selected_notes
+  for k,note in ipairs(selected_notes) do
+    note.redistributed_placement_in_sel_range = remap_range(
+      (k - 1) / amount_of_notes,
+      0,
+      total_line_range / (selection.end_line - selection.start_line + 1),
+      0,
+      total_delay_range)
+  end
+  
+  --calculate redistributed placements in note range
+  for k,note in ipairs(selected_notes) do
+    note.redistributed_placement_in_note_range = remap_range(
+      (k - 1) / (amount_of_notes - 1),
+      0,
+      1,
+      earliest_placement,
+      latest_placement)
+      
+      --if there is only one note, we need to set it here, or it will be left as nan
+      if amount_of_notes == 1 then note.redistributed_placement_in_note_range = earliest_placement end
+  end
+  
+  --find the least and greatest volume values in selection
+  local least_vol,greatest_vol = 128,0  
+  for k,note in ipairs(selected_notes) do
+    if note.volume_value > greatest_vol and note.volume_value <= 255 then
+      greatest_vol = note.volume_value 
+    end
+    if note.volume_value < least_vol and note.volume_value <= 255 then
+      least_vol = note.volume_value
+    end
+  end
+  if least_vol == 255 then least_vol = 128 end
+  if greatest_vol == 255 then greatest_vol = 128 end
+  flags.vol_orig_min, flags.vol_min = least_vol, least_vol
+  flags.vol_orig_max, flags.vol_max = greatest_vol, greatest_vol
+  --print("least_vol: " .. least_vol)
+  --print("greatest_vol: " .. greatest_vol)
+  
+  --find the least and greatest panning values in selection
+  local least_pan,greatest_pan = 128,0  
+  for k,note in ipairs(selected_notes) do    
+    local pan_val = note.panning_value
+    
+    if pan_val == 255 then pan_val = 64 end
+    
+    if pan_val > greatest_pan and pan_val <= 128 then
+      greatest_pan = pan_val
+    end
+    if pan_val < least_pan and pan_val <= 128 then
+      least_pan = pan_val
+    end
+  end
+  flags.pan_orig_min, flags.pan_min = least_pan, least_pan
+  flags.pan_orig_max, flags.pan_max = greatest_pan, greatest_pan
+  --print("least_pan: " .. least_pan)
+  --print("greatest_pan: " .. greatest_pan)
+  
+    --find the least and greatest fx values in selection
+  local least_fx,greatest_fx = 255,0  
+  for k,note in ipairs(selected_notes) do    
+    local fx_val = note.effect_amount_value
+    
+    if fx_val > greatest_fx and fx_val <= 255 then
+      greatest_fx = fx_val
+    end
+    if fx_val < least_fx and fx_val <= 255 then
+      least_fx = fx_val
+    end
+  end
+  flags.fx_orig_min, flags.fx_min = least_fx, least_fx
+  flags.fx_orig_max, flags.fx_max = greatest_fx, greatest_fx
+  --print("least_fx: " .. least_fx)
+  --print("greatest_fx: " .. greatest_fx)
+  
+  return true
 end
 
 --GET INDEX-----------------------------------
@@ -1519,110 +1856,6 @@ adclk(6)
   
 end
 
---UPDATE VALUEFIELDS---------------------------------
-local function update_valuefields()
-  
-  vb_notifiers_on = false
-  
-  if time_was_typed then
-    vb.views.time_text.value = typed_time
-  else
-    vb.views.time_text.value = time * time_multiplier + 1
-  end
-  
-  if offset_was_typed then
-    vb.views.offset_text.value = typed_offset
-  else
-    vb.views.offset_text.value = offset * offset_multiplier
-  end
-  
-  if debugvars.extra_curve_controls then vb.views.samplesize_text.value = curve_points[1][curve_type[1]].samplesize end
-  
-  vb_notifiers_on = true
-  
-  --print("update_valuefields() end")
-  
-  return true
-end
-
---UPDATE ANCHOR BITMAPS---------------------------------
-local function update_anchor_bitmaps()
-
-  --anchor  -- 0 = top, 1 = bottom
-  --anchor_type -- 1 = note, 2 = selection
-  
-  if anchor == 0 then
-    if anchor_type == 1 then
-      vb.views.anchorTL.bitmap = "Bitmaps/anchorTL2.bmp"
-      vb.views.anchorTR.bitmap = "Bitmaps/anchorTR1.bmp"
-      vb.views.anchorBL.bitmap = "Bitmaps/anchorBL1.bmp"
-      vb.views.anchorBR.bitmap = "Bitmaps/anchorBR1.bmp"
-    elseif anchor_type == 2 then
-      vb.views.anchorTL.bitmap = "Bitmaps/anchorTL1.bmp"
-      vb.views.anchorTR.bitmap = "Bitmaps/anchorTR2.bmp"
-      vb.views.anchorBL.bitmap = "Bitmaps/anchorBL1.bmp"
-      vb.views.anchorBR.bitmap = "Bitmaps/anchorBR1.bmp"
-    end
-  elseif anchor == 1 then
-    if anchor_type == 1 then
-      vb.views.anchorTL.bitmap = "Bitmaps/anchorTL1.bmp"
-      vb.views.anchorTR.bitmap = "Bitmaps/anchorTR1.bmp"
-      vb.views.anchorBL.bitmap = "Bitmaps/anchorBL2.bmp"
-      vb.views.anchorBR.bitmap = "Bitmaps/anchorBR1.bmp"    
-    elseif anchor_type == 2 then
-      vb.views.anchorTL.bitmap = "Bitmaps/anchorTL1.bmp"
-      vb.views.anchorTR.bitmap = "Bitmaps/anchorTR1.bmp"
-      vb.views.anchorBL.bitmap = "Bitmaps/anchorBL1.bmp"
-      vb.views.anchorBR.bitmap = "Bitmaps/anchorBR2.bmp"
-    end
-  end
-
-  return true
-end
-
---UPDATE COLLISION BITMAPS--------------------------------
-local function update_collision_bitmaps()
-
-  local our_collisions,wild_collisions = false,false
-  
-  for k,v in pairs(note_collisions.ours) do
-    if v then our_collisions = true end
-  end
-
-  for k,v in pairs(note_collisions.wild) do
-    if v then wild_collisions = true end
-  end
-  
-  if our_collisions then
-    vb.views.collision_sel_bmp.tooltip = tooltips.collision_sel[2] .. tooltips.collision_sel[3]
-    vb.views.collision_sel_bmp.active = true
-    vb.views.collision_sel_bmp.mode = "button_color"
-    if not flags.our_notes then vb.views.collision_sel_bmp.bitmap = "Bitmaps/collision_sel_1.bmp"
-    else vb.views.collision_sel_bmp.bitmap = "Bitmaps/collision_sel_2.bmp"
-    end
-  else
-    vb.views.collision_sel_bmp.tooltip = tooltips.collision_sel[1]
-    vb.views.collision_sel_bmp.active = false
-    vb.views.collision_sel_bmp.bitmap = "Bitmaps/collision_sel_0.bmp"
-    vb.views.collision_sel_bmp.mode = "main_color"
-  end
-  
-  if wild_collisions then
-    vb.views.collision_wild_bmp.tooltip = tooltips.collision_wild[2] .. tooltips.collision_wild[3]
-    vb.views.collision_wild_bmp.active = true
-    vb.views.collision_wild_bmp.mode = "button_color"
-    if flags.wild_notes then vb.views.collision_wild_bmp.bitmap = "Bitmaps/collision_wild_1.bmp"
-    else vb.views.collision_wild_bmp.bitmap = "Bitmaps/collision_wild_2.bmp"
-    end
-  else
-    vb.views.collision_wild_bmp.tooltip = tooltips.collision_wild[1]
-    vb.views.collision_wild_bmp.active = false
-    vb.views.collision_wild_bmp.bitmap = "Bitmaps/collision_wild_0.bmp"
-    vb.views.collision_wild_bmp.mode = "main_color"
-  end
-
-end
-
 --UPDATE START POS----------------------------
 local function update_start_pos()
 
@@ -1638,177 +1871,6 @@ local function update_start_pos()
   start_pos.line = selected_notes[earliest_note.number].current_location.l
   
   return true
-end
-
---REPOSITION CONTROLS----------------------------------------------
-local function reposition_controls()
-
-  vb_notifiers_on = false
-  
-  vb.views.time_slider.value = -vb.views.time_slider.value
-  
-  vb_notifiers_on = true
-
-end
-
---SPACE KEY-----------------------------------
-local function space_key()
-  
-  if os.clock() - last_spacebar > 0.05 then --after typing in a valuebox, space_key() double-triggers for some reason, so we need to use this timer to make sure it only triggers once per 50ms or so
-    if not song.transport.playing then
-      song.transport:start_at(start_pos) 
-    else
-      song.transport:stop()
-    end
-  end
-  
-  last_spacebar = os.clock()
-  
-  return true
-end
-
---SHIFT SPACE KEY-----------------------------------
-local function shift_space_key()
-  
-  if os.clock() - last_spacebar > 0.05 then --after typing in a valuebox, space_key() double-triggers for some reason, so we need to use this timer to make sure it only triggers once per 50ms or so
-    if not song.transport.playing then
-      song.transport:start_at(song.transport.edit_pos) 
-    else
-      song.transport:stop()
-    end
-  end
-  
-  last_spacebar = os.clock()
-
-  return true
-end
-
---UP KEY--------------------------------------------
-local function up_key()
-  
-  local s,_,l = get_index(
-    song.selected_sequence_index,
-    1,
-    song.selected_line_index - 1,
-    1
-  )
-  
-  song.selected_sequence_index = s
-  song.selected_line_index = l
-
-end
-
---DOWN KEY--------------------------------------------
-local function down_key()
-
-  local s,_,l = get_index(
-    song.selected_sequence_index,
-    1,
-    song.selected_line_index + 1,
-    1
-  )
-  
-  song.selected_sequence_index = s
-  song.selected_line_index = l
-
-end
-
---LEFT KEY--------------------------------------------
-local function left_key()
-
-  local track = song.selected_track_index
-
-  --find our current column index
-  local column
-  
-  --if we do not have an effect column selected, then we have a note column selected
-  if song.selected_effect_column_index == 0 then
-    column = song.selected_note_column_index
-  else
-    column = song.selected_effect_column_index + get_visible_note_columns(track)
-  end
-
-  local s,t,l,nc,ec = get_index(
-    song.selected_sequence_index,
-    track,
-    song.selected_line_index,
-    column - 1
-  )
-  
-  song.selected_sequence_index = s
-  song.selected_track_index = t
-  song.selected_line_index = l  
-  if nc then song.selected_note_column_index = nc
-  elseif ec then song.selected_effect_column_index = ec end
-
-end
-
---RIGHT KEY--------------------------------------------
-local function right_key()
-
-  local track = song.selected_track_index
-  
-  --find our current column index
-  local column
-  
-  --if we do not have an effect column selected, then we have a note column selected
-  if song.selected_effect_column_index == 0 then
-    column = song.selected_note_column_index
-  else
-    column = song.selected_effect_column_index + get_visible_note_columns(track)
-  end
-
-  local s,t,l,nc,ec = get_index(
-    song.selected_sequence_index,
-    track,
-    song.selected_line_index,
-    column + 1
-  )
-  
-  song.selected_sequence_index = s
-  song.selected_track_index = t
-  song.selected_line_index = l  
-  if nc then song.selected_note_column_index = nc
-  elseif ec then song.selected_effect_column_index = ec end
-
-end
-
---TAB KEY----------------------------------------
-local function tab_key()
-
-  local s,t,l,nc,ec = get_index(
-    song.selected_sequence_index,
-    song.selected_track_index + 1,
-    song.selected_line_index,
-    1
-  )
-  
-  song.selected_sequence_index = s
-  song.selected_track_index = t
-  song.selected_line_index = l
-  
-  if nc then song.selected_note_column_index = nc
-  elseif ec then song.selected_effect_column_index = ec end  
-
-end
-
---SHIFT TAB KEY----------------------------------------
-local function shift_tab_key()
-
-  local s,t,l,nc,ec = get_index(
-    song.selected_sequence_index,
-    song.selected_track_index - 1,
-    song.selected_line_index,
-    1
-  )
-  
-  song.selected_sequence_index = s
-  song.selected_track_index = t
-  song.selected_line_index = l
-  
-  if nc then song.selected_note_column_index = nc
-  elseif ec then song.selected_effect_column_index = ec end  
-
 end
 
 --BINOMIAL COEFFECIENT---------------------------------
@@ -1832,12 +1894,6 @@ end
 local function bern(val,v,n)
 
   return binom(n,v) * (val^v) * (1 - val)^(n-v)  
-end
-
---SIGN------------------------------------
-local function sign(number)
-
-  return number > 0 and 1 or (number == 0 and 0 or -1)  
 end
 
 --GET CURVE--------------------------------------
@@ -2190,6 +2246,166 @@ local function queue_processing()
   else
     idle_processing = true
   end
+
+end
+
+--SPACE KEY-----------------------------------
+local function space_key()
+  
+  if os.clock() - last_spacebar > 0.05 then --after typing in a valuebox, space_key() double-triggers for some reason, so we need to use this timer to make sure it only triggers once per 50ms or so
+    if not song.transport.playing then
+      song.transport:start_at(start_pos) 
+    else
+      song.transport:stop()
+    end
+  end
+  
+  last_spacebar = os.clock()
+  
+  return true
+end
+
+--SHIFT SPACE KEY-----------------------------------
+local function shift_space_key()
+  
+  if os.clock() - last_spacebar > 0.05 then --after typing in a valuebox, space_key() double-triggers for some reason, so we need to use this timer to make sure it only triggers once per 50ms or so
+    if not song.transport.playing then
+      song.transport:start_at(song.transport.edit_pos) 
+    else
+      song.transport:stop()
+    end
+  end
+  
+  last_spacebar = os.clock()
+
+  return true
+end
+
+--UP KEY--------------------------------------------
+local function up_key()
+  
+  local s,_,l = get_index(
+    song.selected_sequence_index,
+    1,
+    song.selected_line_index - 1,
+    1
+  )
+  
+  song.selected_sequence_index = s
+  song.selected_line_index = l
+
+end
+
+--DOWN KEY--------------------------------------------
+local function down_key()
+
+  local s,_,l = get_index(
+    song.selected_sequence_index,
+    1,
+    song.selected_line_index + 1,
+    1
+  )
+  
+  song.selected_sequence_index = s
+  song.selected_line_index = l
+
+end
+
+--LEFT KEY--------------------------------------------
+local function left_key()
+
+  local track = song.selected_track_index
+
+  --find our current column index
+  local column
+  
+  --if we do not have an effect column selected, then we have a note column selected
+  if song.selected_effect_column_index == 0 then
+    column = song.selected_note_column_index
+  else
+    column = song.selected_effect_column_index + get_visible_note_columns(track)
+  end
+
+  local s,t,l,nc,ec = get_index(
+    song.selected_sequence_index,
+    track,
+    song.selected_line_index,
+    column - 1
+  )
+  
+  song.selected_sequence_index = s
+  song.selected_track_index = t
+  song.selected_line_index = l  
+  if nc then song.selected_note_column_index = nc
+  elseif ec then song.selected_effect_column_index = ec end
+
+end
+
+--RIGHT KEY--------------------------------------------
+local function right_key()
+
+  local track = song.selected_track_index
+  
+  --find our current column index
+  local column
+  
+  --if we do not have an effect column selected, then we have a note column selected
+  if song.selected_effect_column_index == 0 then
+    column = song.selected_note_column_index
+  else
+    column = song.selected_effect_column_index + get_visible_note_columns(track)
+  end
+
+  local s,t,l,nc,ec = get_index(
+    song.selected_sequence_index,
+    track,
+    song.selected_line_index,
+    column + 1
+  )
+  
+  song.selected_sequence_index = s
+  song.selected_track_index = t
+  song.selected_line_index = l  
+  if nc then song.selected_note_column_index = nc
+  elseif ec then song.selected_effect_column_index = ec end
+
+end
+
+--TAB KEY----------------------------------------
+local function tab_key()
+
+  local s,t,l,nc,ec = get_index(
+    song.selected_sequence_index,
+    song.selected_track_index + 1,
+    song.selected_line_index,
+    1
+  )
+  
+  song.selected_sequence_index = s
+  song.selected_track_index = t
+  song.selected_line_index = l
+  
+  if nc then song.selected_note_column_index = nc
+  elseif ec then song.selected_effect_column_index = ec end  
+
+end
+
+--SHIFT TAB KEY----------------------------------------
+local function shift_tab_key()
+
+  local s,t,l,nc,ec = get_index(
+    song.selected_sequence_index,
+    song.selected_track_index - 1,
+    song.selected_line_index,
+    1
+  )
+  
+  song.selected_sequence_index = s
+  song.selected_track_index = t
+  song.selected_line_index = l
+  
+  if nc then song.selected_note_column_index = nc
+  elseif ec then song.selected_effect_column_index = ec end  
 
 end
 
@@ -2638,7 +2854,7 @@ local function show_window()
                 mode = "center",
               
                 vb:minislider {    
-                  id = "volume_slider", 
+                  id = "vol_slider", 
                   tooltip = "Volume Curve", 
                   min = -1, 
                   max = 1, 
@@ -2769,7 +2985,7 @@ local function show_window()
                 mode = "center",
               
                 vb:minislider {    
-                  id = "panning_slider", 
+                  id = "pan_slider", 
                   tooltip = "Pan Curve", 
                   min = -1, 
                   max = 1, 
@@ -2900,7 +3116,7 @@ local function show_window()
                 mode = "center",
               
                 vb:minislider {    
-                  id = "FX_slider", 
+                  id = "fx_slider", 
                   tooltip = "FX Amount Curve", 
                   min = -1, 
                   max = 1, 
@@ -3388,7 +3604,7 @@ local function show_window()
 end
 
 --REFORM SELECTION-----------------------------------------------
-local function reform_selection()
+local function reform_main()
       
   local result = reset_variables()
   if result then result = add_document_notifiers() end
@@ -3418,7 +3634,7 @@ end
 
 renoise.tool():add_menu_entry {
   name = "Pattern Editor:Reform Selection...", 
-  invoke = function() reform_selection() end 
+  invoke = function() reform_main() end 
 }
 
 renoise.tool():add_menu_entry {
@@ -3428,7 +3644,7 @@ renoise.tool():add_menu_entry {
 
 renoise.tool():add_keybinding {
   name = "Pattern Editor:Selection:Reform Selection", 
-  invoke = function(repeated) if not repeated then reform_selection() end end
+  invoke = function(repeated) if not repeated then reform_main() end end
 }
 
 renoise.tool():add_keybinding {
