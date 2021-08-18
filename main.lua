@@ -49,15 +49,17 @@ local window_content = nil
 local vb_notifiers_on
 local last_spacebar = 0
 local theme = {
-  selected_button_back = {255,0,0}
+  selected_button_back = {255,255,255}
 }
 local tooltips = {
   collision_sel = {
-    "Indicates if selected notes are overwriting each other",
+    "No selected notes are overwriting each other",
+    "Selected notes are overwriting each other",
     "\n[First] to keep earlier notes\n[Last] to keep later notes"
   },
   collision_wild = {
-    "Indicates if selected notes are colliding with non-selected notes",
+    "No selected notes are colliding with non-selected notes",
+    "Selected notes are colliding with non-selected notes",
     "\n[Sel] to keep selected notes\n[Not] to keep non-selected notes"
   }
 }
@@ -310,6 +312,55 @@ local function reset_variables()
   return true
 end
 
+--GET THEME DATA--------------------------------
+local function get_theme_data()
+
+  app:save_theme("Theme.xrnc")
+
+  --open/cache the file contents as a string
+  local themefile = io.open("Theme.xrnc")
+  local themestring = themefile:read("*a")
+  themefile:close()
+  
+  --find the indices where the Selected_Button_Back property begins and ends
+  local i = {}
+  i[1], i[2] = themestring:find("<Selected_Button_Back>",0,true)
+  i[3], i[4] = themestring:find("</Selected_Button_Back>",0,true)
+  
+  local stringtemp = themestring:sub(i[2]+1,i[3]-1)
+  
+  i[1], i[2] = stringtemp:find(",",0,true)
+  
+  theme.selected_button_back[1] = tonumber(stringtemp:sub(0,i[1]-1))
+  
+  i[2], i[3] = stringtemp:find(",",i[2]+1,true)
+  
+  theme.selected_button_back[2] = tonumber(stringtemp:sub(i[1]+1,i[2]-1))
+  
+  theme.selected_button_back[3] = tonumber(stringtemp:sub(i[2]+1,stringtemp:len()))
+
+  return true
+end
+
+--SET THEME COLORS-----------------------------------------
+local function set_theme_colors()
+  
+  vb.views.overflow_button.color = flags.overflow and theme.selected_button_back or {0,0,0}
+  vb.views.condense_button.color = flags.condense and theme.selected_button_back or {0,0,0}
+  vb.views.redistribute_button.color = flags.redistribute and theme.selected_button_back or {0,0,0}
+
+  vb.views.vol_re_button.color = flags.vol_re and theme.selected_button_back or {0,0,0}
+  vb.views.pan_re_button.color = flags.pan_re and theme.selected_button_back or {0,0,0}
+  vb.views.fx_re_button.color = flags.fx_re and theme.selected_button_back or {0,0,0}
+  
+  --vb.views.anchorTL.color = anchor == 0 and anchor_type == 1 and theme.selected_button_back or {0,0,0}
+  --vb.views.anchorTR.color = anchor == 0 and anchor_type == 2 and theme.selected_button_back or {0,0,0}
+  --vb.views.anchorBL.color = anchor == 1 and anchor_type == 1 and theme.selected_button_back or {0,0,0}
+  --vb.views.anchorBR.color = anchor == 1 and anchor_type == 2 and theme.selected_button_back or {0,0,0}
+
+  return true
+end
+
 --RESET VIEW------------------------------------------
 local function reset_view()
 
@@ -321,8 +372,6 @@ local function reset_view()
   vb.views.offset_text.value = offset
   vb.views.offset_slider.value = offset
   vb.views.offset_multiplier_rotary.value = offset_multiplier
-  vb.views.anchor_switch.value = anchor + 1
-  vb.views.anchor_type_switch.value = anchor_type
   vb.views.vol_min_box.value = flags.vol_orig_min
   vb.views.vol_max_box.value = flags.vol_orig_max
   vb.views.pan_min_box.value = flags.pan_orig_min
@@ -330,21 +379,16 @@ local function reset_view()
   vb.views.fx_min_box.value = flags.fx_orig_min
   vb.views.fx_max_box.value = flags.fx_orig_max
   
-  vb.views.overflow_button.color = flags.overflow and theme.selected_button_back or {0,0,0}
-  vb.views.condense_button.color = flags.condense and theme.selected_button_back or {0,0,0}
-  vb.views.redistribute_button.color = flags.redistribute and theme.selected_button_back or {0,0,0}
-  
   vb.views.vol_column.visible = false
   vb.views.volbutton.bitmap = "Bitmaps/volbutton.bmp"
-  vb.views.vol_re_button.color = {0,0,0}
   
   vb.views.pan_column.visible = false
   vb.views.panbutton.bitmap = "Bitmaps/panbutton.bmp"
-  vb.views.pan_re_button.color = {0,0,0}
   
   vb.views.fx_column.visible = false
   vb.views.fxbutton.bitmap = "Bitmaps/fxbutton.bmp"
-  vb.views.fx_re_button.color = {0,0,0}
+  
+  set_theme_colors()
   
   vb_notifiers_on = true
 
@@ -364,8 +408,6 @@ local function deactivate_controls()
     vb.views.overflow_button.active = false
     vb.views.condense_button.active = false
     vb.views.redistribute_button.active = false
-    vb.views.anchor_switch.active = false
-    vb.views.anchor_type_switch.active = false
   end
 
   return true
@@ -384,8 +426,6 @@ local function activate_controls()
     vb.views.overflow_button.active = true
     vb.views.condense_button.active = true
     vb.views.redistribute_button.active = true
-    vb.views.anchor_switch.active = true
-    vb.views.anchor_type_switch.active = true
   end
 
   return true
@@ -1076,7 +1116,11 @@ end
 
 --SET NOTE COLUMN VALUES----------------------------------------------
 local function set_note_column_values(column,vals)
-
+  
+  --clamp the delay value to avoid errors
+  if vals.delay_value < 0 then vals.delay_value = 0
+  elseif vals.delay_value > 255 then vals.delay_value = 255 end
+  
   column.note_value = vals.note_value
   column.instrument_value = vals.instrument_value
   column.volume_value = vals.volume_value
@@ -1501,6 +1545,41 @@ local function update_valuefields()
   return true
 end
 
+--UPDATE ANCHOR BITMAPS---------------------------------
+local function update_anchor_bitmaps()
+
+  --anchor  -- 0 = top, 1 = bottom
+  --anchor_type -- 1 = note, 2 = selection
+  
+  if anchor == 0 then
+    if anchor_type == 1 then
+      vb.views.anchorTL.bitmap = "Bitmaps/anchorTL2.bmp"
+      vb.views.anchorTR.bitmap = "Bitmaps/anchorTR1.bmp"
+      vb.views.anchorBL.bitmap = "Bitmaps/anchorBL1.bmp"
+      vb.views.anchorBR.bitmap = "Bitmaps/anchorBR1.bmp"
+    elseif anchor_type == 2 then
+      vb.views.anchorTL.bitmap = "Bitmaps/anchorTL1.bmp"
+      vb.views.anchorTR.bitmap = "Bitmaps/anchorTR2.bmp"
+      vb.views.anchorBL.bitmap = "Bitmaps/anchorBL1.bmp"
+      vb.views.anchorBR.bitmap = "Bitmaps/anchorBR1.bmp"
+    end
+  elseif anchor == 1 then
+    if anchor_type == 1 then
+      vb.views.anchorTL.bitmap = "Bitmaps/anchorTL1.bmp"
+      vb.views.anchorTR.bitmap = "Bitmaps/anchorTR1.bmp"
+      vb.views.anchorBL.bitmap = "Bitmaps/anchorBL2.bmp"
+      vb.views.anchorBR.bitmap = "Bitmaps/anchorBR1.bmp"    
+    elseif anchor_type == 2 then
+      vb.views.anchorTL.bitmap = "Bitmaps/anchorTL1.bmp"
+      vb.views.anchorTR.bitmap = "Bitmaps/anchorTR1.bmp"
+      vb.views.anchorBL.bitmap = "Bitmaps/anchorBL1.bmp"
+      vb.views.anchorBR.bitmap = "Bitmaps/anchorBR2.bmp"
+    end
+  end
+
+  return true
+end
+
 --UPDATE COLLISION BITMAPS--------------------------------
 local function update_collision_bitmaps()
 
@@ -1515,7 +1594,7 @@ local function update_collision_bitmaps()
   end
   
   if our_collisions then
-    vb.views.collision_sel_bmp.tooltip = tooltips.collision_sel[1] .. tooltips.collision_sel[2]
+    vb.views.collision_sel_bmp.tooltip = tooltips.collision_sel[2] .. tooltips.collision_sel[3]
     vb.views.collision_sel_bmp.active = true
     vb.views.collision_sel_bmp.mode = "button_color"
     if not flags.our_notes then vb.views.collision_sel_bmp.bitmap = "Bitmaps/collision_sel_1.bmp"
@@ -1529,7 +1608,7 @@ local function update_collision_bitmaps()
   end
   
   if wild_collisions then
-    vb.views.collision_wild_bmp.tooltip = tooltips.collision_wild[1] .. tooltips.collision_wild[2]
+    vb.views.collision_wild_bmp.tooltip = tooltips.collision_wild[2] .. tooltips.collision_wild[3]
     vb.views.collision_wild_bmp.active = true
     vb.views.collision_wild_bmp.mode = "button_color"
     if flags.wild_notes then vb.views.collision_wild_bmp.bitmap = "Bitmaps/collision_wild_1.bmp"
@@ -2049,6 +2128,12 @@ adclk(1)
   --update our valuefield texts
   update_valuefields()
   
+  --update our anchor button bitmaps
+  update_anchor_bitmaps()
+  
+  --update theme colors
+  set_theme_colors()
+  
   --update our collision indicator bitmaps
   update_collision_bitmaps()
   
@@ -2108,43 +2193,6 @@ local function queue_processing()
 
 end
 
---GET THEME DATA--------------------------------
-local function get_theme_data()
-
-  app:save_theme("Theme.xrnc")
-
-  --open/cache the file contents as a string
-  local themefile = io.open("Theme.xrnc")
-  local themestring = themefile:read("*a")
-  themefile:close()
-  
-  --find the indices where the Selected_Button_Back property begins and ends
-  local i = {}
-  i[1], i[2] = themestring:find("<Selected_Button_Back>",0,true)
-  i[3], i[4] = themestring:find("</Selected_Button_Back>",0,true)
-  
-  local stringtemp = themestring:sub(i[2]+1,i[3]-1)
-  
-  i[1], i[2] = stringtemp:find(",",0,true)
-  
-  theme.selected_button_back[1] = tonumber(stringtemp:sub(0,i[1]-1))
-  
-  i[2], i[3] = stringtemp:find(",",i[2]+1,true)
-  
-  theme.selected_button_back[2] = tonumber(stringtemp:sub(i[1]+1,i[2]-1))
-  
-  theme.selected_button_back[3] = tonumber(stringtemp:sub(i[2]+1,stringtemp:len()))
-
-  return true
-end
-
---SET THEME COLORS-----------------------------------------
-local function set_theme_colors()
-
-  if flags.vol_re then vb.views.vol_re_button.color = theme.selected_button_back end
-
-end
-
 --SHOW WINDOW---------------------------------------------------- 
 local function show_window()
 
@@ -2176,7 +2224,6 @@ local function show_window()
       "body_color", -- same as 'button_back' but with body text/back color
       "main_color", -- same as 'button_back' but with main text/back colors
     }
-    local border_bmp_mode = bitmap_modes[4]
     
     --create the curve displays
     local curvedisplayrow = {}
@@ -2230,7 +2277,7 @@ local function show_window()
                 mode = "center",                
                 vb:valuefield {
                   id = "time_text",
-                  tooltip = "Type exact time multiplication values here!",
+                  tooltip = "Type precise Time values here!",
                   align = "center",
                   min = -256,
                   max = 256,
@@ -2296,7 +2343,7 @@ local function show_window()
                 mode = "justify",                
                 vb:rotary { 
                   id = "time_multiplier_rotary", 
-                  tooltip = "Time Slider Range Extension", 
+                  tooltip = "Time Slider Multiplier",
                   min = 1, 
                   max = 63, 
                   value = time_multiplier, 
@@ -2331,7 +2378,7 @@ local function show_window()
                 mode = "center",                
                 vb:valuefield {
                   id = "curve_text",
-                  tooltip = "Type exact curve intensity values here!",
+                  tooltip = "Type precise Curve values here!",
                   align = "center",
                   min = -1,
                   max = 1,
@@ -2395,6 +2442,7 @@ local function show_window()
                   vb:row {                
                     vb:bitmap {
                       id = "curve_type_1",
+                      tooltip = "Curve Type",
                       bitmap = "Bitmaps/curve1pressed.bmp",
                       mode = "button_color",
                       notifier = function()
@@ -2407,6 +2455,7 @@ local function show_window()
                     },
                     vb:bitmap {
                       id = "curve_type_2",
+                      tooltip = "Curve Type",
                       bitmap = "Bitmaps/curve2.bmp",
                       mode = "button_color",
                       notifier = function()
@@ -2443,7 +2492,7 @@ local function show_window()
                 mode = "center",                
                 vb:valuefield {
                   id = "offset_text",
-                  tooltip = "Type exact line offset values here!",
+                  tooltip = "Type precise Offset values here!",
                   align = "center",
                   min = -256,
                   max = 256,
@@ -2503,7 +2552,7 @@ local function show_window()
                 mode = "justify",              
                 vb:rotary { 
                   id = "offset_multiplier_rotary", 
-                  tooltip = "Offset Slider Range Extension", 
+                  tooltip = "Offset Slider Multiplier", 
                   min = 1, 
                   max = 63, 
                   value = 1, 
@@ -2524,57 +2573,10 @@ local function show_window()
           } --close time/curve/offset aligner
         }, --close time/curve/offset column
         
-        vb:column { --contains vol,pan,fx buttons
-          
-          vb:vertical_aligner {
-            mode = "top",
-            spacing = 2,
-          
-            vb:bitmap {
-              id = "volbutton",
-              tooltip = "Volume Remapping",
-              bitmap = "Bitmaps/volbutton.bmp",
-              mode = "button_color",
-              notifier = function()
-                flags.vol = not flags.vol
-                vb.views.vol_column.visible = flags.vol
-                if flags.vol then vb.views.volbutton.bitmap = "Bitmaps/volbuttonpressed.bmp"
-                else vb.views.volbutton.bitmap = "Bitmaps/volbutton.bmp" end
-                queue_processing()
-              end
-            },
-            
-            vb:bitmap {
-              id = "panbutton",
-              tooltip = "Panning Remapping",
-              bitmap = "Bitmaps/panbutton.bmp",
-              mode = "button_color",
-              notifier = function()
-                flags.pan = not flags.pan
-                vb.views.pan_column.visible = flags.pan
-                if flags.pan then vb.views.panbutton.bitmap = "Bitmaps/panbuttonpressed.bmp"
-                else vb.views.panbutton.bitmap = "Bitmaps/panbutton.bmp" end
-                queue_processing()
-              end
-            },
-            
-            vb:bitmap {
-              id = "fxbutton",
-              tooltip = "FX Value Remapping",
-              bitmap = "Bitmaps/fxbutton.bmp",
-              mode = "button_color",
-              notifier = function()
-                flags.fx = not flags.fx
-                vb.views.fx_column.visible = flags.fx
-                if flags.fx then vb.views.fxbutton.bitmap = "Bitmaps/fxbuttonpressed.bmp"
-                else vb.views.fxbutton.bitmap = "Bitmaps/fxbutton.bmp" end
-                queue_processing()
-              end
-            } --close fxbutton
-          } --close vol/pan/fx vertical aligner
-        },  --close vol/pan/fx column
+        
         
         vb:column { --contains all volume-related controls
+          margin = 2,
           id = "vol_column",
           style = re_rack_style,
           visible = false,          
@@ -2690,16 +2692,11 @@ local function show_window()
             
             vb:button { --redistribute button
               id = "vol_re_button",
-              tooltip = "Redistribute Volume evenly Throughout Selection\n(based on Volume Lo and Volume Hi values)",
+              tooltip = "Redistribute Volume levels evenly",
               bitmap = "Bitmaps/redistributelvls.bmp",
               width = "100%",
               notifier = function()
                 flags.vol_re = not flags.vol_re
-                if flags.vol_re then
-                  vb.views.vol_re_button.color = theme.selected_button_back
-                else 
-                  vb.views.vol_re_button.color = {0,0,0}
-                end
                 queue_processing()
               end
             }
@@ -2707,6 +2704,7 @@ local function show_window()
         }, --close volume controls column
         
         vb:column { --contains all panning-related controls
+          margin = 2,
           id = "pan_column",
           style = re_rack_style,
           --margin = default_margin,
@@ -2727,7 +2725,7 @@ local function show_window()
           
           vb:valuebox {
             id = "pan_max_box",
-            tooltip = "Panning Hi",
+            tooltip = "Pan Hi",
             width = 50,
             height = 15,
             min = 0,
@@ -2772,7 +2770,7 @@ local function show_window()
               
                 vb:minislider {    
                   id = "panning_slider", 
-                  tooltip = "Panning Curve", 
+                  tooltip = "Pan Curve", 
                   min = -1, 
                   max = 1, 
                   value = curve_intensity[3], 
@@ -2792,7 +2790,7 @@ local function show_window()
             
           vb:valuebox {
             id = "pan_min_box",
-            tooltip = "Panning Lo",
+            tooltip = "Pan Lo",
             width = 50,
             height = 15,
             min = 0,
@@ -2825,16 +2823,11 @@ local function show_window()
             
             vb:button { --redistribute button
               id = "pan_re_button",
-              tooltip = "Redistribute Panning evenly throughout selection\n(based on Panning Lo and Panning Hi values)",
+              tooltip = "Redistribute Pan values evenly",
               bitmap = "Bitmaps/redistributelvls.bmp",
               width = "100%",
               notifier = function()
                 flags.pan_re = not flags.pan_re
-                if flags.pan_re then
-                  vb.views.pan_re_button.color = theme.selected_button_back
-                else 
-                  vb.views.pan_re_button.color = {0,0,0}
-                end
                 queue_processing()
               end
             }
@@ -2842,6 +2835,7 @@ local function show_window()
         }, --close panning controls column       
         
         vb:column { --contains all fx-related controls
+          margin = 2,
           id = "fx_column",
           style = re_rack_style,
           --margin = default_margin,
@@ -2862,7 +2856,7 @@ local function show_window()
           
           vb:valuebox {
             id = "fx_max_box",
-            tooltip = "FX Hi",
+            tooltip = "FX Amount Hi",
             width = 50,
             height = 15,
             min = 0,
@@ -2907,7 +2901,7 @@ local function show_window()
               
                 vb:minislider {    
                   id = "FX_slider", 
-                  tooltip = "FX Curve", 
+                  tooltip = "FX Amount Curve", 
                   min = -1, 
                   max = 1, 
                   value = curve_intensity[3], 
@@ -2927,7 +2921,7 @@ local function show_window()
             
           vb:valuebox {
             id = "fx_min_box",
-            tooltip = "FX Lo",
+            tooltip = "FX Amount Lo",
             width = 50,
             height = 15,
             min = 0,
@@ -2960,16 +2954,11 @@ local function show_window()
             
             vb:button { --redistribute button
               id = "fx_re_button",
-              tooltip = "Redistribute FX evenly throughout selection\n(based on FX Lo and FX Hi values)",
+              tooltip = "Redistribute FX amounts evenly",
               bitmap = "Bitmaps/redistributelvls.bmp",
               width = "100%",
               notifier = function()
                 flags.fx_re = not flags.fx_re
-                if flags.fx_re then
-                  vb.views.fx_re_button.color = theme.selected_button_back
-                else 
-                  vb.views.fx_re_button.color = {0,0,0}
-                end
                 queue_processing()
               end
             }
@@ -2977,145 +2966,222 @@ local function show_window()
         } --close FX controls column 
         
       }, --close row
-      
-      --2ND ROW (contains controls for overflow/condense/redistribute, anchor, collisions, and help)
-      vb:row {
-        vb:column { --column containing overflow/condense/redistribute controls
-          style = "group",          
-          vb:button { 
-            id = "overflow_button", 
-            tooltip = "Overflow Mode - Notes that collide will move out into available empty columns",
-            bitmap = "Bitmaps/overflow.bmp",
-            width = 36,
-            height = 20,
-            notifier = function()
-              if vb_notifiers_on then
-                flags.overflow = not flags.overflow
-                if flags.overflow then
-                  vb.views.overflow_button.color = theme.selected_button_back
-                else 
-                  vb.views.overflow_button.color = {0,0,0}
-                end
-                queue_processing()
-              end
-            end 
-          },            
-          vb:button { 
-            id = "condense_button",
-            tooltip = "Condense Mode - Selected notes will try to fit into as few columns as possible",
-            bitmap = "Bitmaps/condense.bmp",
-            width = 36,
-            height = 20,
-            notifier = function()
-              if vb_notifiers_on then
-                flags.condense = not flags.condense
-                if flags.condense then
-                  vb.views.condense_button.color = theme.selected_button_back
-                else 
-                  vb.views.condense_button.color = {0,0,0}
-                end
-                queue_processing()
-              end
-            end 
-          },            
-          vb:button { 
-            id = "redistribute_button",
-            tooltip = "Redistribute Mode - The timing of selected notes will be redistributed evenly",
-            bitmap = "Bitmaps/redistribute.bmp",
-            width = 36,
-            height = 20,
-            notifier = function()
-              if vb_notifiers_on then
-                flags.redistribute = not flags.redistribute
-                if flags.redistribute then
-                  vb.views.redistribute_button.color = theme.selected_button_back
-                else 
-                  vb.views.redistribute_button.color = {0,0,0}
-                end
-                queue_processing()
-              end
-            end 
-          }
-        },  --close overflow/condense/redistribute column          
+            
+      vb:row { --2ND ROW (contains overflow/condense/redistribute, anchor, collision, & help controls)
+        height = 69,
+        margin = 1,
         
-        vb:vertical_aligner { --aligns anchor switch to bottom
-          mode = "bottom",        
-          vb:column { --column containing our switches
-            style = "group",            
-            vb:switch {
-              id = "anchor_switch",
-              width = 64,
-              value = 1,
-              items = {"Top", "End"},
-              notifier = function(value)
-                if vb_notifiers_on then
-                  anchor = value - 1
-                  reposition_controls()
-                  queue_processing()
-                end
-              end
-            },              
-            vb:switch {
-              id = "anchor_type_switch",
-              width = 64,
-              value = 1,
-              items = {"Note", "Select"},
-              notifier = function(value)
-                if vb_notifiers_on then
-                  anchor_type = value
-                  update_start_pos()
-                  queue_processing()
-                end
-              end
-            }
-          } --close anchor column
-        },  --close anchor vertical aligner
-        
-        vb:space{width = 45},
+        vb:column { --column containing overflow/condense/redistribute controls          
+          style = "group",
+          vb:space{height = 2, width = 40},
           
-        vb:column { --column containing collision/help controls
-          width = 60,
-          vb:row {
-            height = 44,
-            vb:bitmap {
-              tooltip = tooltips.collision_sel[1],
-              id = "collision_sel_bmp",
-              mode = "main_color",
-              bitmap = "Bitmaps/collision_sel_0.bmp",
-              active = false,
-              notifier = function()
-                if vb_notifiers_on then
-                  flags.our_notes = not flags.our_notes
-                  queue_processing()
-                end
-              end
-            },                
-            vb:bitmap {
-              tooltip = tooltips.collision_wild[1],
-              id = "collision_wild_bmp",
-              mode = "main_color",
-              bitmap = "Bitmaps/collision_wild_0.bmp",
-              active = false,
-              notifier = function()
-                if vb_notifiers_on then
-                  flags.wild_notes = not flags.wild_notes
-                  queue_processing()
-                end
-              end
-            } 
-          }, --close collision row
+          vb:horizontal_aligner {
+            mode = "center",
+            vb:column {
+              vb:button { 
+                id = "overflow_button", 
+                tooltip = "Use available empty columns if necessary",
+                bitmap = "Bitmaps/overflow.bmp",
+                width = 36,
+                height = 23,
+                notifier = function()
+                  if vb_notifiers_on then
+                    flags.overflow = not flags.overflow
+                    queue_processing()
+                  end
+                end 
+              },            
+              vb:button { 
+                id = "condense_button",
+                tooltip = "Use as few columns as possible",
+                bitmap = "Bitmaps/condense.bmp",
+                width = 36,
+                height = 23,
+                notifier = function()
+                  if vb_notifiers_on then
+                    flags.condense = not flags.condense
+                    queue_processing()
+                  end
+                end 
+              },            
+              vb:button { 
+                id = "redistribute_button",
+                tooltip = "Redistribute note timings evenly",
+                bitmap = "Bitmaps/redistribute.bmp",
+                width = 36,
+                height = 23,
+                notifier = function()
+                  if vb_notifiers_on then
+                    flags.redistribute = not flags.redistribute
+                    queue_processing()
+                  end
+                end 
+              }
+            }
+          },
+          
+          vb:space{height = 2, width = 40}
+        },  --close overflow/condense/redistribute column
         
+        vb:space {width = 7},
+        
+        vb:row {
+          height = 44,
+          vb:bitmap {
+            tooltip = tooltips.collision_sel[1],
+            id = "collision_sel_bmp",
+            mode = "main_color",
+            bitmap = "Bitmaps/collision_sel_0.bmp",
+            active = false,
+            notifier = function()
+              if vb_notifiers_on then
+                flags.our_notes = not flags.our_notes
+                queue_processing()
+              end
+            end
+          },                
+          vb:bitmap {
+            tooltip = tooltips.collision_wild[1],
+            id = "collision_wild_bmp",
+            mode = "main_color",
+            bitmap = "Bitmaps/collision_wild_0.bmp",
+            active = false,
+            notifier = function()
+              if vb_notifiers_on then
+                flags.wild_notes = not flags.wild_notes
+                queue_processing()
+              end
+            end
+          } 
+        }, --close collision row
+        
+        vb:space{width = 11},
+        
+        vb:column { --column/row containing anchor controls
+          vb:row {
+            spacing = -29,
+            vb:bitmap {
+              bitmap = "Bitmaps/anchor.bmp",
+              mode = bitmap_modes[5]
+            },
+            
+            vb:column {
+              vb:space{height=39},
+              vb:row {   
+                vb:bitmap {
+                  id = "anchorTL",
+                  tooltip = "Set anchor to earliest note",
+                  bitmap = "Bitmaps/anchorTL1.bmp",
+                  mode = bitmap_modes[3],
+                  notifier = function()
+                    anchor = 0
+                    anchor_type = 1
+                    queue_processing()
+                  end
+                },
+                vb:bitmap {
+                  id = "anchorTR",
+                  tooltip = "Set anchor to beginning of selection",
+                  bitmap = "Bitmaps/anchorTR1.bmp",
+                  mode = bitmap_modes[3],
+                  notifier = function()
+                    anchor = 0
+                    anchor_type = 2
+                    queue_processing()
+                  end
+                }
+              },
+              vb:row {
+                vb:bitmap {
+                  id = "anchorBL",
+                  tooltip = "Set anchor to last note",
+                  bitmap = "Bitmaps/anchorBL1.bmp",
+                  mode = bitmap_modes[3],
+                  notifier = function()
+                    anchor = 1
+                    anchor_type = 1
+                    queue_processing()
+                  end
+                },
+                vb:bitmap {
+                  id = "anchorBR",
+                  tooltip = "Set anchor to end of selection",
+                  bitmap = "Bitmaps/anchorBR1.bmp",
+                  mode = bitmap_modes[3],
+                  notifier = function()
+                    anchor = 1
+                    anchor_type = 2
+                    queue_processing()
+                  end
+                }
+              }              
+            } --close anchor buttons column          
+          } --close anchor row
+        },  --close anchor column
+        
+        vb:space{width = 8},
+        
+        vb:vertical_aligner {  --contains vol,pan,fx buttons
+          mode = "top",
+          vb:column {
+            spacing = 0,
+          
+            vb:bitmap {
+              id = "volbutton",
+              tooltip = "Volume Transform",
+              bitmap = "Bitmaps/volbutton.bmp",
+              mode = "button_color",
+              notifier = function()
+                flags.vol = not flags.vol
+                vb.views.vol_column.visible = flags.vol
+                if flags.vol then vb.views.volbutton.bitmap = "Bitmaps/volbuttonpressed.bmp"
+                else vb.views.volbutton.bitmap = "Bitmaps/volbutton.bmp" end
+                queue_processing()
+              end
+            },
+            
+            vb:bitmap {
+              id = "panbutton",
+              tooltip = "Pan Transform",
+              bitmap = "Bitmaps/panbutton.bmp",
+              mode = "button_color",
+              notifier = function()
+                flags.pan = not flags.pan
+                vb.views.pan_column.visible = flags.pan
+                if flags.pan then vb.views.panbutton.bitmap = "Bitmaps/panbuttonpressed.bmp"
+                else vb.views.panbutton.bitmap = "Bitmaps/panbutton.bmp" end
+                queue_processing()
+              end
+            },
+            
+            vb:bitmap {
+              id = "fxbutton",
+              tooltip = "FX Amount Transform",
+              bitmap = "Bitmaps/fxbutton.bmp",
+              mode = "button_color",
+              notifier = function()
+                flags.fx = not flags.fx
+                vb.views.fx_column.visible = flags.fx
+                if flags.fx then vb.views.fxbutton.bitmap = "Bitmaps/fxbuttonpressed.bmp"
+                else vb.views.fxbutton.bitmap = "Bitmaps/fxbutton.bmp" end
+                queue_processing()
+              end
+            } --close fxbutton
+          }, --close vol/pan/fx vertical aligner
+          
           vb:horizontal_aligner {
             mode = "right",
             vb:button {
               tooltip = "Help",
               bitmap = "Bitmaps/question.bmp",
+              width = 15,
+              height = 15,
               notifier = function()
                 app:open_url("https://xephyrpanda.wixsite.com/citrus64/reform")
               end
-            } --close help button
-          } --close help vertical aligner
-        } --close collision/help column
+            } --close help button   
+          } --close help horizontal aligner    
+        }  --close vol/pan/fx column   
       } --close 2nd row
     } --close window_content column
     
@@ -3334,6 +3400,8 @@ local function reform_selection()
   if result then result = show_window() end
   if result then result = activate_controls() end
   if result then result = update_valuefields() end
+  if result then result = update_anchor_bitmaps() end
+  if result then result = set_theme_colors() end
   if result then result = update_all_curve_displays() end
   if result then result = reset_view() end
 
