@@ -1,7 +1,7 @@
 --Reform - main.lua--
 
 --DEBUG CONTROLS-------------------------------
-_AUTO_RELOAD_DEBUG = true
+_AUTO_RELOAD_DEBUG = false
 
 local debugvars = {
   extra_curve_controls = false,
@@ -58,7 +58,7 @@ local tooltips = {
     "\n[First] to keep earlier notes\n[Last] to keep later notes"
   },
   collision_wild = {
-    "No selected notes are colliding with non-selected notes",
+    "No selected notes are overwriting non-selected notes",
     "Selected notes are colliding with non-selected notes",
     "\n[Sel] to keep selected notes\n[Not] to keep non-selected notes"
   }
@@ -283,6 +283,7 @@ sign(number) - returns 1 or -1 depending on the +/- of a number
 --SONG DATA MANIPULTAION--
 store_note(s,p,t,c,l,counter)
 get_selection()
+select_line_at_edit_cursor()
 find_selected_notes()
 calculate_note_placements()
 get_index(s,t,l,c)
@@ -314,6 +315,7 @@ apply_reform()
 apply_reform_notifier()
 add_reform_idle_notifier()
 queue_processing()
+strumify()
 
 --HOTKEYS--
 space_key()
@@ -330,6 +332,7 @@ show_window()
 key_handler(dialog,key)
 reform_main()
 restore_reform_window()
+strumify_line_at_edit_cursor()
 --]]
 
 
@@ -383,7 +386,7 @@ local function reset_variables()
   
   curve_intensity = {0, 0, 0, 0}  --time,vol,pan,fx
   curve_type = {1, 1, 1, 1}
-  curve_points = {
+  --[[curve_points = {
     
     { --time
       sampled = {},
@@ -450,7 +453,7 @@ local function reset_variables()
     { xsize = 11, ysize = 11, display = {}, buffer1 = {}, buffer2 = {} }, --fx
   }
   drawmode = "line"
-  
+  --]]
   offset = 0
   offset_multiplier = 1
   offset_was_typed = false
@@ -527,7 +530,7 @@ local function update_valuefields()
     vb.views.offset_text.value = offset * offset_multiplier
   end
   
-  if debugvars.extra_curve_controls then vb.views.samplesize_text.value = curve_points[1][curve_type[1]].samplesize end
+  --if debugvars.extra_curve_controls then vb.views.samplesize_text.value = curve_points[1][curve_type[1]].samplesize end
   
   vb_notifiers_on = true
   
@@ -630,17 +633,17 @@ local function reset_view()
   vb.views.offset_slider.value = 0
   vb.views.offset_multiplier_rotary.value = 1
   
-  vb.views.vol_max_box.value = flags.vol_orig_min
+  vb.views.vol_min_box.value = flags.vol_orig_min
   vb.views.vol_slider.value = 0
-  vb.views.vol_min_box.value = flags.vol_orig_max
+  vb.views.vol_max_box.value = flags.vol_orig_max
   
-  vb.views.pan_max_box.value = flags.pan_orig_min
+  vb.views.pan_min_box.value = flags.pan_orig_min
   vb.views.pan_slider.value = 0
-  vb.views.pan_min_box.value = flags.pan_orig_max
+  vb.views.pan_max_box.value = flags.pan_orig_max
   
-  vb.views.fx_max_box.value = flags.fx_orig_min
+  vb.views.fx_min_box.value = flags.fx_orig_min
   vb.views.fx_slider.value = 0
-  vb.views.fx_min_box.value = flags.fx_orig_max
+  vb.views.fx_max_box.value = flags.fx_orig_max
   
   vb.views.collision_sel_bmp.bitmap = "Bitmaps/collision_sel_0.bmp"
   vb.views.collision_wild_bmp.bitmap = "Bitmaps/collision_wild_0.bmp"
@@ -765,7 +768,7 @@ end
 --RELEASE DOCUMENT------------------------------------------
 local function release_document()
 
-  if debugvars.print_notifier_trigger then print("release document notifier triggered!") end
+  --if debugvars.print_notifier_trigger then print("release document notifier triggered!") end
   
   --invalidate selection
   valid_selection = false
@@ -798,7 +801,7 @@ end
 --NEW DOCUMENT------------------------------------------
 local function new_document()
 
-  if debugvars.print_notifier_trigger then print("new document notifier triggered!") end
+  --if debugvars.print_notifier_trigger then print("new document notifier triggered!") end
 
   song = renoise.song()
   
@@ -814,14 +817,14 @@ local function add_document_notifiers()
   if not tool.app_release_document_observable:has_notifier(release_document) then
     tool.app_release_document_observable:add_notifier(release_document)
     
-    if debugvars.print_notifier_attach then print("release document notifier attached!") end    
+    --if debugvars.print_notifier_attach then print("release document notifier attached!") end    
   end
 
   --add new document notifier if it doesn't exist yet
   if not tool.app_new_document_observable:has_notifier(new_document) then
     tool.app_new_document_observable:add_notifier(new_document)
     
-    if debugvars.print_notifier_attach then print("new document notifier attached!") end    
+    --if debugvars.print_notifier_attach then print("new document notifier attached!") end    
   end  
 
   return true
@@ -833,9 +836,9 @@ local function add_pattern_length_notifier(p)
   --define the notifier function
   local function pattern_length_notifier()
     
-    if debugvars.print_notifier_trigger then
-      print(("pattern %i's length notifier triggered!!"):format(p))
-    end
+    --if debugvars.print_notifier_trigger then
+      --print(("pattern %i's length notifier triggered!!"):format(p))
+    --end
     
     pattern_lengths[p].valid = false
     
@@ -873,9 +876,9 @@ local function get_pattern_length_at_seq(s)
     --add our notifier to invalidate our recorded pattern length if this pattern's length changes
     add_pattern_length_notifier(p)
     
-    if debugvars.print_notifier_attach then
-      print(("pattern %i's length notifier attached!!"):format(p))
-    end
+    --if debugvars.print_notifier_attach then
+      --print(("pattern %i's length notifier attached!!"):format(p))
+    --end
   end
   
   return pattern_lengths[s].length
@@ -884,7 +887,7 @@ end
 --SEQUENCE COUNT NOTIFIER---------------------------------------------------
 local function sequence_count_notifier()
   
-  if debugvars.print_notifier_trigger then print("sequence count notifier triggered!!") end
+  --if debugvars.print_notifier_trigger then print("sequence count notifier triggered!!") end
   
   seq_length.valid = false
   
@@ -902,7 +905,7 @@ local function get_sequence_length()
     --add our notifier to invalidate our recorded seq length if the sequence length changes
     song.sequencer.pattern_sequence_observable:add_notifier(sequence_count_notifier)
     
-    if debugvars.print_notifier_attach then print("sequence count notifier attached!!") end
+    --if debugvars.print_notifier_attach then print("sequence count notifier attached!!") end
   end
   
   return seq_length.length
@@ -911,7 +914,7 @@ end
 --TRACK COUNT NOTIFIER---------------------------------------------------
 local function track_count_notifier()
   
-  if debugvars.print_notifier_trigger then print("track count notifier triggered!!") end
+  --if debugvars.print_notifier_trigger then print("track count notifier triggered!!") end
   
   track_count.valid = false
   
@@ -929,7 +932,7 @@ local function get_track_count()
     --add our notifier to invalidate our recorded track count if the amount of tracks changes
     song.tracks_observable:add_notifier(track_count_notifier)
     
-    if debugvars.print_notifier_attach then print("track count notifier attached!!") end
+    --if debugvars.print_notifier_attach then print("track count notifier attached!!") end
   end
   
   return track_count.count
@@ -941,9 +944,9 @@ local function add_visible_note_columns_notifier(t)
   --define the notifier function
   local function visible_note_columns_notifier()
     
-    if debugvars.print_notifier_trigger then
-      print(("track %i's visible note columns notifier triggered!!"):format(t))
-    end
+    --if debugvars.print_notifier_trigger then
+      --print(("track %i's visible note columns notifier triggered!!"):format(t))
+    --end
     
     visible_note_columns[t].valid = false
     
@@ -978,9 +981,9 @@ local function get_visible_note_columns(t)
     --add our notifier to invalidate our record if anything changes
     add_visible_note_columns_notifier(t)
     
-    if debugvars.print_notifier_attach then
-      print(("track %i's visible note columns notifier attached!!"):format(t))
-    end
+    --if debugvars.print_notifier_attach then
+      --print(("track %i's visible note columns notifier attached!!"):format(t))
+    --end
   end
   
   return visible_note_columns[t].amount
@@ -992,9 +995,9 @@ local function add_visible_effect_columns_notifier(t)
   --define the notifier function
   local function visible_effect_columns_notifier()
     
-    if debugvars.print_notifier_trigger then
-      print(("track %i's visible effect columns notifier triggered!!"):format(t))
-    end
+    --if debugvars.print_notifier_trigger then
+      --print(("track %i's visible effect columns notifier triggered!!"):format(t))
+    --end
     
     visible_effect_columns[t].valid = false
     
@@ -1029,9 +1032,9 @@ local function get_visible_effect_columns(t)
     --add our notifier to invalidate our record if anything changes
     add_visible_effect_columns_notifier(t)
     
-    if debugvars.print_notifier_attach then
-      print(("track %i's visible effect columns notifier attached!!"):format(t))
-    end
+    --if debugvars.print_notifier_attach then
+      --print(("track %i's visible effect columns notifier attached!!"):format(t))
+    --end
   end
   
   return visible_effect_columns[t].amount
@@ -1117,6 +1120,23 @@ local function get_selection()
     return false
   end
 
+  return true
+end
+
+--SELECT LINE AT EDIT CURSOR-----------------------------------------
+local function select_line_at_edit_cursor()
+  
+  local line = song.selected_line_index
+  local track = song.selected_track_index
+  
+  song.selection_in_pattern = {
+    start_line = line,
+    end_line = line,
+    start_track = track,
+    end_track = track,
+    start_column = 1,
+    end_column = get_visible_note_columns(track)
+  }
   return true
 end
 
@@ -2212,7 +2232,7 @@ local function apply_reform_notifier()
   
   tool.app_idle_observable:remove_notifier(apply_reform_notifier)
   
-  if debugvars.print_notifier_trigger then print("idle notifier triggered!") end
+  --if debugvars.print_notifier_trigger then print("idle notifier triggered!") end
 end
 
 --ADD REFORM IDLE NOTIFIER--------------------------------------
@@ -2222,7 +2242,7 @@ local function add_reform_idle_notifier()
   if not tool.app_idle_observable:has_notifier(apply_reform_notifier) then
     tool.app_idle_observable:add_notifier(apply_reform_notifier)
   
-    if debugvars.print_notifier_attach then print("idle notifier attached!") end
+    --if debugvars.print_notifier_attach then print("idle notifier attached!") end
   end
 
 end
@@ -2230,9 +2250,9 @@ end
 --QUEUE PROCESSING--------------------------------------
 local function queue_processing()
 
-  if debugvars.print_queue_processing then
-    print("queue_processing()")
-  end
+  --if debugvars.print_queue_processing then
+    --print("queue_processing()")
+  --end
 
   if not idle_processing then
     apply_reform()
@@ -2249,7 +2269,18 @@ local function queue_processing()
 
 end
 
+--STRUMIFY--------------------------------------
+local function strumify()
+
+  anchor_type = 2
+  flags.redistribute = true
+  queue_processing()
+  
+  return true
+end
+
 --SPACE KEY-----------------------------------
+--plays back from the earliest note in the selection
 local function space_key()
   
   if os.clock() - last_spacebar > 0.05 then --after typing in a valuebox, space_key() double-triggers for some reason, so we need to use this timer to make sure it only triggers once per 50ms or so
@@ -2266,6 +2297,7 @@ local function space_key()
 end
 
 --SHIFT SPACE KEY-----------------------------------
+--plays back from the current position of the edit cursor
 local function shift_space_key()
   
   if os.clock() - last_spacebar > 0.05 then --after typing in a valuebox, space_key() double-triggers for some reason, so we need to use this timer to make sure it only triggers once per 50ms or so
@@ -2282,6 +2314,7 @@ local function shift_space_key()
 end
 
 --UP KEY--------------------------------------------
+--navigates up one line (jumps between patterns & wraps around at top of sequence)
 local function up_key()
   
   local s,_,l = get_index(
@@ -2297,6 +2330,7 @@ local function up_key()
 end
 
 --DOWN KEY--------------------------------------------
+--navigates up one line (jumps between patterns & wraps around at bottom of sequence)
 local function down_key()
 
   local s,_,l = get_index(
@@ -2312,6 +2346,7 @@ local function down_key()
 end
 
 --LEFT KEY--------------------------------------------
+--navigates left on column (jumps between tracks & wraps around at left-most track)
 local function left_key()
 
   local track = song.selected_track_index
@@ -2342,6 +2377,7 @@ local function left_key()
 end
 
 --RIGHT KEY--------------------------------------------
+--navigates right on column (jumps between tracks & wraps around at right-most track)
 local function right_key()
 
   local track = song.selected_track_index
@@ -2372,6 +2408,7 @@ local function right_key()
 end
 
 --TAB KEY----------------------------------------
+--navigates cursor one track to the right (wraps around at right-most track)
 local function tab_key()
 
   local s,t,l,nc,ec = get_index(
@@ -2391,6 +2428,7 @@ local function tab_key()
 end
 
 --SHIFT TAB KEY----------------------------------------
+--navigates cursor one track to the left (wraps around at left-most track)
 local function shift_tab_key()
 
   local s,t,l,nc,ec = get_index(
@@ -2507,7 +2545,7 @@ local function show_window()
                     if val and -256 > val then val = -256 end
                     if val and 256 < val then val = 256 end
                     if val and -256 <= val and val <= 256 then --if val is a number, and within min/max
-                      if debugvars.print_valuefield then print("time tonumber = " .. val) end
+                      --if debugvars.print_valuefield then print("time tonumber = " .. val) end
                       typed_time = val
                       time_was_typed = true                     
                       queue_processing()
@@ -2520,13 +2558,13 @@ local function show_window()
                   --and after the notifier is called
                   --it converts the value to a formatted string to be displayed
                   tostring = function(value)
-                    if debugvars.print_valuefield then print(("time tostring = x%.3f"):format(value)) end
+                    --if debugvars.print_valuefield then print(("time tostring = x%.3f"):format(value)) end
                     return ("x%.3f"):format(value)
                   end,        
                   
                   --notifier is called whenever the value is changed
                   notifier = function(value)
-                  if debugvars.print_valuefield then print("time_text notifier") end
+                  --if debugvars.print_valuefield then print("time_text notifier") end
                   end
                 }
               },
@@ -2721,7 +2759,7 @@ local function show_window()
                     if val and -256 > val then val = -256 end
                     if val and 256 < val then val = 256 end
                     if val and -256 <= val and val <= 256 then --if val is a number, and within min/max
-                      if debugvars.print_valuefield then print("offset tonumber = " .. val) end
+                      --if debugvars.print_valuefield then print("offset tonumber = " .. val) end
                       typed_offset = val
                       offset_was_typed = true
                       queue_processing()
@@ -2732,14 +2770,14 @@ local function show_window()
                   --called when field is clicked, after tonumber is called, and after notifier is called
                   --it converts the value to a formatted string to be displayed
                   tostring = function(value)
-                    if debugvars.print_valuefield then print(("offset tostring = %.1f lines"):format(value)) end
+                    --if debugvars.print_valuefield then print(("offset tostring = %.1f lines"):format(value)) end
                     if value == 0 then return "0.0 lines" end           
                     return ("%.1f lines"):format(value)
                   end,
                   
                   --called whenever the value is changed
                   notifier = function(value)
-                  if debugvars.print_valuefield then print("offset_text notifier") end
+                  --if debugvars.print_valuefield then print("offset_text notifier") end
                   end
                 } --close offset valuefield
               }, --close offset valuefield horizontal aligner
@@ -2831,7 +2869,7 @@ local function show_window()
             --called whenever the value is changed
             notifier = function(val)
               if vb_notifiers_on then
-                flags.vol_max = (val < 255 and val) or 255
+                flags.vol_max = (val <= 128 and val) or 128
                 queue_processing()
               end
             end          
@@ -2896,7 +2934,7 @@ local function show_window()
             --called whenever the value is changed
             notifier = function(val)
               if vb_notifiers_on then
-                flags.vol_min = (val < 255 and val) or 255
+                flags.vol_min = (val <= 128 and val) or 128
                 queue_processing()
               end
             end
@@ -3401,7 +3439,7 @@ local function show_window()
       } --close 2nd row
     } --close window_content column
     
-    if debugvars.extra_curve_controls then    
+    --[=[if debugvars.extra_curve_controls then    
       local debugcurvecontrols = vb:column {
         
         vb:horizontal_aligner { --aligns in column
@@ -3489,7 +3527,7 @@ local function show_window()
       
       vb.views.curve_column:add_child(debugcurvecontrols)
       
-    end --end "if debugvars.extra_curve_controls"    
+    end --end "if debugvars.extra_curve_controls"]=] 
   end --end "if not window_content" statement
     
   
@@ -3621,25 +3659,67 @@ local function reform_main()
   if result then result = update_all_curve_displays() end
   if result then result = reset_view() end
 
+  return true
 end
 
 --RESTORE REFORM WINDOW----------------------------------------------------
 local function restore_reform_window()
-
   if valid_selection then show_window() end
+end
+
+--STRUMIFY LINE AT EDIT CURSOR----------------------------------------------
+local function strumify_line_at_edit_cursor()
   
+  local result = reset_variables()
+  if result then result = add_document_notifiers() end
+  if result then result = select_line_at_edit_cursor() end
+  if result then result = get_selection() end
+  if result then result = find_selected_notes() end
+  if result then result = calculate_note_placements() end
+  if result then result = update_start_pos() end
+  if result then result = get_theme_data() end
+  if result then result = show_window() end
+  if result then result = activate_controls() end
+  if result then result = update_valuefields() end
+  if result then result = update_anchor_bitmaps() end
+  if result then result = set_theme_colors() end
+  if result then result = update_all_curve_displays() end
+  if result then result = reset_view() end
+  if result then result = strumify() end
+
+  return true  
 end
 
 --MENU/HOTKEY ENTRIES-------------------------------------------------------------------------------- 
 
 renoise.tool():add_menu_entry {
-  name = "Pattern Editor:Reform Selection...", 
-  invoke = function() reform_main() end 
+  name = "Pattern Editor:Reform:Reform Selection...", 
+  invoke = function() reform_main() end
 }
 
 renoise.tool():add_menu_entry {
-  name = "Main Menu:Tools:Restore Reform Window", 
-  invoke = function() restore_reform_window() end 
+  name = "Pattern Editor:Reform:Restore Reform Window", 
+  invoke = function() restore_reform_window() end
+}
+
+renoise.tool():add_menu_entry {
+  name = "Pattern Editor:Reform:Strumify Line at Edit Cursor", 
+  invoke = function() strumify_line_at_edit_cursor() end
+}
+
+renoise.tool():add_menu_entry {
+  name = "Main Menu:Tools:Reform:Reform Selection...", 
+  invoke = function() reform_main() end
+}
+
+renoise.tool():add_menu_entry {
+  name = "Main Menu:Tools:Reform:Restore Reform Window", 
+  invoke = function() restore_reform_window() end
+}
+
+renoise.tool():add_menu_entry {
+  name = "Main Menu:Tools:Strumify Line at Edit Cursor", 
+  invoke = function() strumify_line_at_edit_cursor() end
 }
 
 renoise.tool():add_keybinding {
@@ -3650,4 +3730,9 @@ renoise.tool():add_keybinding {
 renoise.tool():add_keybinding {
   name = "Pattern Editor:Selection:Restore Reform Window", 
   invoke = function(repeated) if not repeated then restore_reform_window() end end
+}
+
+renoise.tool():add_keybinding {
+  name = "Pattern Editor:Selection:Strumify Line at Edit Cursor", 
+  invoke = function(repeated) if not repeated then strumify_line_at_edit_cursor() end end
 }
