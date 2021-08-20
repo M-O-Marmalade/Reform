@@ -1,7 +1,7 @@
 --Reform - main.lua--
 
 --DEBUG CONTROLS-------------------------------
-_AUTO_RELOAD_DEBUG = false
+_AUTO_RELOAD_DEBUG = true
 
 local debugvars = {
   extra_curve_controls = false,
@@ -63,6 +63,8 @@ local tooltips = {
     "\n[Sel] to keep selected notes\n[Not] to keep non-selected notes"
   }
 }
+local control_increments = {0.001, 0.05, 0.01, 0.05, 0.25}
+local last_arrow_key_time = 0
 
 local previous_time = 0
 local idle_processing = false --if apply_reform() takes longer than 40ms, this becomes true
@@ -1968,6 +1970,7 @@ local function calculate_curve(i)
   local samplesize = curve_points[i][curve_type[i]].samplesize
   if curve_intensity[i] ~= 0 then
     samplesize = curve_points[i][curve_type[i]].samplesize
+    if i == 1 then samplesize = math.floor(samplesize + (samplesize * (1-intensity) * 3)) end
   else
     samplesize = curve_points[i].default.samplesize
   end
@@ -2447,6 +2450,79 @@ local function shift_tab_key()
 
 end
 
+--MOD ARROW KEY------------------------------------------
+local function mod_arrow_key(control, alt_control, multiplier, repeated)
+  
+  local control_val = control.value
+  local control_min_max = {[-1] = control.min, [1] = control.max}
+  local alt_control_val, alt_control_min_max
+  if alt_control then
+    alt_control_val = alt_control.value
+    alt_control_min_max = {[-1] = alt_control.min, [1] = alt_control.max}
+  end
+  
+  local sign = sign(multiplier)
+  
+  local increment  
+  if not repeated then
+    last_arrow_key_time = os.clock()
+    increment = control_increments[1]
+  else
+    increment = control_increments[2] * math.pow((os.clock() - last_arrow_key_time), 2)
+  end
+  
+  if (not alt_control) or (control_val ~= control_min_max[-1] and control_val ~= control_min_max[1]) then
+    
+    control_val = control_val + increment*multiplier
+    if control_val < control_min_max[-1] then control_val = control_min_max[-1]
+    elseif control_val > control_min_max[1] then control_val = control_min_max[1]
+    end
+    control.value = control_val
+  
+  else
+  
+    if control_val == control_min_max[sign] then
+      alt_control_val = alt_control_val + (increment*math.abs(multiplier))
+    elseif control_val == control_min_max[-sign] then
+      if alt_control_val == alt_control_min_max[-1] then
+        control.value = control_val + increment*multiplier
+      end
+      alt_control_val = alt_control_val - (increment*math.abs(multiplier))
+    end
+    
+    if alt_control_val < alt_control_min_max[-1] then
+      alt_control_val = alt_control_min_max[-1]
+    elseif alt_control_val > alt_control_min_max[1] then
+      alt_control_val = alt_control_min_max[1]
+    end
+    alt_control.value = alt_control_val
+    
+  end
+
+end
+
+--ALT LEFT------------------------------------
+local function alt_left()
+
+  vb.views.curve_type_1.bitmap = "Bitmaps/curve1pressed.bmp"
+  vb.views.curve_type_2.bitmap = "Bitmaps/curve2.bmp"
+  curve_type[1] = 1
+  update_curve_display(1)
+  queue_processing()
+
+end
+
+--ALT RIGHT-----------------------------------
+local function alt_right()
+
+  vb.views.curve_type_1.bitmap = "Bitmaps/curve1.bmp"
+  vb.views.curve_type_2.bitmap = "Bitmaps/curve2pressed.bmp"
+  curve_type[1] = 2
+  update_curve_display(1)
+  queue_processing()
+
+end
+
 --SHOW WINDOW---------------------------------------------------- 
 local function show_window()
 
@@ -2659,7 +2735,7 @@ local function show_window()
                   --and after the notifier is called
                   --it converts the value to a formatted string to be displayed
                   tostring = function(value)
-                    return ("x%.2f"):format(value)
+                    return ("x%.3f"):format(value)
                   end,        
                   
                   --notifier is called whenever the value is changed
@@ -3552,12 +3628,66 @@ local function show_window()
         
           if key.name == "space" then shift_space_key() end          
           if key.name == "tab" then shift_tab_key() end
+          if key.name == "up" then 
+            mod_arrow_key(
+              vb.views.offset_slider,
+              vb.views.offset_multiplier_rotary,
+              3.9063
+            ) 
+          end
+          
+          if key.name == "down" then 
+            mod_arrow_key(
+              vb.views.offset_slider,
+              vb.views.offset_multiplier_rotary,
+              -3.9063
+            ) 
+          end
         
-        --elseif key.modifiers == "alt" then
+        elseif key.modifiers == "alt" then
+        
+          if key.name == "up" then 
+            mod_arrow_key(
+              vb.views.curve_slider,
+              nil,
+              1
+            ) 
+          end
+          
+          if key.name == "down" then 
+            mod_arrow_key(
+              vb.views.curve_slider,
+              nil,
+              -1
+            ) 
+          end
+          
+          if key.name == "left" then
+            alt_left()
+          end
+          
+          if key.name == "right" then
+            alt_right()
+          end
         
         elseif key.modifiers == "control" then
         
           if key.name == "space" then space_key() end
+          if key.name == "up" then 
+            mod_arrow_key(
+              vb.views.time_slider,
+              vb.views.time_multiplier_rotary,
+              1
+            ) 
+          end
+          
+          if key.name == "down" then 
+            mod_arrow_key(
+              vb.views.time_slider,
+              vb.views.time_multiplier_rotary,
+              -1
+            ) 
+          end
         
         --elseif key.modifiers == "shift + alt" then
         
@@ -3582,10 +3712,63 @@ local function show_window()
         elseif key.modifiers == "shift" then
         
           if key.name == "tab" then shift_tab_key() end
+          if key.name == "up" then 
+            mod_arrow_key(
+              vb.views.offset_slider,
+              vb.views.offset_multiplier_rotary,
+              3.9063,
+              true
+            ) 
+          end
+          
+          if key.name == "down" then 
+            mod_arrow_key(
+              vb.views.offset_slider,
+              vb.views.offset_multiplier_rotary,
+              -3.9063,
+              true
+            ) 
+          end
         
-        --elseif key.modifiers == "alt" then
+        elseif key.modifiers == "alt" then
         
-        --elseif key.modifiers == "control" then
+          if key.name == "up" then 
+            mod_arrow_key(
+              vb.views.curve_slider,
+              nil,
+              1,
+              true
+            ) 
+          end
+          
+          if key.name == "down" then 
+            mod_arrow_key(
+              vb.views.curve_slider,
+              nil,
+              -1,
+              true
+            ) 
+          end
+        
+        elseif key.modifiers == "control" then
+        
+          if key.name == "up" then 
+            mod_arrow_key(
+              vb.views.time_slider,
+              vb.views.time_multiplier_rotary,
+              1,
+              true
+            ) 
+          end
+          
+          if key.name == "down" then 
+            mod_arrow_key(
+              vb.views.time_slider,
+              vb.views.time_multiplier_rotary,
+              -1,
+              true
+            ) 
+          end
         
         --elseif key.modifiers == "shift + alt" then
         
