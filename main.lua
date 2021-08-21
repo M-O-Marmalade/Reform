@@ -318,6 +318,7 @@ apply_reform_notifier()
 add_reform_idle_notifier()
 queue_processing()
 strumify()
+update_all_controls() -- should really be with the vb stuff..
 
 --HOTKEYS--
 space_key()
@@ -388,74 +389,7 @@ local function reset_variables()
   
   curve_intensity = {0, 0, 0, 0}  --time,vol,pan,fx
   curve_type = {1, 1, 1, 1}
-  --[[curve_points = {
-    
-    { --time
-      sampled = {},
-      default = {
-        points = {{0,1,1},{1,0,1}},
-        samplesize = 2
-      },
-      {
-        positive = {{0,1,1},{1,1,1},{1,0,1}},
-        negative = {{0,1,1},{0,0,1},{1,0,1}},
-        samplesize = 19
-      },
-      {
-        positive = {{0,1,1},{0.5,1,4},{0.5,0,4},{1,0,1}},
-        negative = {{0,1,1},{0,0.5,4},{1,0.5,4},{1,0,1}},
-        samplesize = 18
-      }
-    },
-    
-    { --vol
-      sampled = {},
-      default = {
-        points = {{0,0,1},{1,1,1}},
-        samplesize = 2
-      },
-      {
-        positive = {{0,0,1},{0,1,1},{1,1,1}},
-        negative = {{0,0,1},{1,0,1},{1,1,1}},
-        samplesize = 10
-      }
-    },
-    
-    { --pan
-      sampled = {},
-      default = {
-        points = {{0,0,1},{1,1,1}},
-        samplesize = 2
-      },
-      {
-        positive = {{0,0,1},{0,1,1},{1,1,1}},
-        negative = {{0,0,1},{1,0,1},{1,1,1}},
-        samplesize = 10
-      }
-    },
-    
-      { --fx
-      sampled = {},
-      default = {
-        points = {{0,0,1},{1,1,1}},
-        samplesize = 2
-      },
-      {
-        positive = {{0,0,1},{0,1,1},{1,1,1}},
-        negative = {{0,0,1},{1,0,1},{1,1,1}},
-        samplesize = 10
-      }
-    },
-    
-  }
-  curve_displays = {
-    { xsize = 16, ysize = 16, display = {}, buffer1 = {}, buffer2 = {} }, --time
-    { xsize = 11, ysize = 11, display = {}, buffer1 = {}, buffer2 = {} }, --vol
-    { xsize = 11, ysize = 11, display = {}, buffer1 = {}, buffer2 = {} }, --pan
-    { xsize = 11, ysize = 11, display = {}, buffer1 = {}, buffer2 = {} }, --fx
-  }
-  drawmode = "line"
-  --]]
+  
   offset = 0
   offset_multiplier = 1
   offset_was_typed = false
@@ -619,12 +553,54 @@ local function update_collision_bitmaps()
 
 end 
 
+--UPDATE CURVE TYPE BITMAPS------------------------
+local function update_curve_type_bitmaps()
+
+  if curve_type[1] == 1 then
+    vb.views.curve_type_1.bitmap = "Bitmaps/curve1pressed.bmp"
+    vb.views.curve_type_2.bitmap = "Bitmaps/curve2.bmp"
+  else
+    vb.views.curve_type_1.bitmap = "Bitmaps/curve1.bmp"
+    vb.views.curve_type_2.bitmap = "Bitmaps/curve2pressed.bmp"
+  end
+
+end
+
+--UPDATE VOL PAN FX BITMAPS--------------------------
+local function update_vol_pan_fx_bitmaps()
+
+  if flags.vol then 
+    vb.views.volbutton.bitmap = "Bitmaps/volbuttonpressed.bmp"
+    vb.views.vol_column.visible = true
+  else 
+    vb.views.volbutton.bitmap = "Bitmaps/volbutton.bmp"
+    vb.views.vol_column.visible = false
+  end
+  
+  if flags.pan then 
+    vb.views.panbutton.bitmap = "Bitmaps/panbuttonpressed.bmp"
+    vb.views.pan_column.visible = true
+  else 
+    vb.views.panbutton.bitmap = "Bitmaps/panbutton.bmp"
+    vb.views.pan_column.visible = false
+  end
+  
+  if flags.fx then 
+    vb.views.fxbutton.bitmap = "Bitmaps/fxbuttonpressed.bmp"
+    vb.views.fx_column.visible = true
+  else 
+    vb.views.fxbutton.bitmap = "Bitmaps/fxbutton.bmp"
+    vb.views.fx_column.visible = false
+  end
+
+end
+
 --RESET VIEW------------------------------------------
 local function reset_view()
 
   vb_notifiers_on = false
   
-  vb.views.time_text.value = 1
+  vb.views.time_text.value = 1 
   vb.views.time_slider.value = 0
   vb.views.time_multiplier_rotary.value = 1
   vb.views.curve_text.value = 0
@@ -2134,11 +2110,78 @@ local function update_all_curve_displays()
   return true
 end
 
+--DETECT CHANGES TO OUR NOTE-------------------------
+local function detect_changes_to_our_note(note)
+
+  if note.flags.write then --if the note previously wrote to its current location..
+    
+    --get access to the note's current column (location)
+    local column = song:pattern(note.current_location.p):track(note.current_location.t):line(note.current_location.l):note_column(note.current_location.c)
+  
+    --update all of the values for this note (note,instr,vol,pan,dly,fx)
+    note.note_value = column.note_value
+    note.instrument_value = column.instrument_value
+    note.effect_number_value = column.effect_number_value
+    --local delay_value = column.delay_value
+    if not flags.vol then note.volume_value = column.volume_value end
+    if not flags.pan then note.panning_value = column.panning_value end
+    if not flags.fx then note.effect_amount_value = column.effect_amount_value end
+  
+  end
+
+--[[
+  the selected_notes "struct" consists of...
+  
+  [1,2 .. n]{
+    
+    --the index where the note originated from
+    original_index = {s,p,t,c,l}
+    
+    --original values stored from the note
+    note_value
+    instrument_value
+    volume_value 
+    panning_value
+    delay_value
+    effect_number_value
+    effect_amount_value
+    
+    rel_line_pos --the line difference between current_location and original_index
+    
+    current_location = {s,p,t,c,l}  --the new/current index of the note after processing
+    
+    --precomputed placement values to use for different types of operations
+    placement    
+    redistributed_placement_in_note_range    
+    redistributed_placement_in_sel_range
+    
+    --values stored from last spot this note overwrote
+    last_overwritten_values = {
+      note_value
+      instrument_value
+      volume_value
+      panning_value
+      delay_value
+      effect_number_value
+      effect_amount_value
+    }
+    
+    flags = {      
+      write --tells whether this note should overwrite whatever is at the same index as it is
+      clear --tells whether this note should clear the index it is at when it leaves
+      restore --tells whether this note should restore anything next time restoration occurs          
+    }
+    
+  }
+--]]  
+
+end
+
 --APPLY REFORM------------------------------------------
 local function apply_reform()
 
-rstclk(0)
-stclk(0)
+--rstclk(0)
+--stclk(0)
   
   --set the clock we will use to determine if idle processing will be necessary next time
   previous_time = os.clock()
@@ -2150,6 +2193,10 @@ stclk(0)
     deactivate_controls()
     return false
   end
+  
+  for _,v in ipairs(selected_notes) do
+    detect_changes_to_our_note(v)
+  end  
   
   table.clear(columns_overflowed_into)
   table.clear(note_collisions.ours)
@@ -2163,10 +2210,10 @@ stclk(0)
   --clear our "placed_notes" table so we can lay them down one by one cleanly
   table.clear(placed_notes)
 
-for i = 1, 9 do
+--[[for i = 1, 9 do
 rstclk(i)
 end
-stclk(1)
+stclk(1)--]]
   
   --place our notes into place one by one
   for k in ipairs(selected_notes) do
@@ -2181,7 +2228,7 @@ stclk(1)
 --rdclk(7,"is_wild clock: ") --removed
 --rdclk(8,"storing notes clock: ")
 
-adclk(1)
+--adclk(1)
 --rdclk(1,"place_new_note total clock: ")
   
   --show vol,pan,dly,fx columns and note columns...
@@ -2222,8 +2269,8 @@ adclk(1)
   --record the time it took to process everything
   previous_time = os.clock() - previous_time
   
-adclk(0)
-rdclk(0,"apply_reform() total clock: ")
+--adclk(0)
+--rdclk(0,"apply_reform() total clock: ")
   
 end
 
@@ -2279,6 +2326,46 @@ local function strumify()
   flags.redistribute = true
   queue_processing()
   
+  return true
+end
+
+--UPDATE ALL CONTROLS-------------------------------
+local function update_all_controls()
+
+  vb_notifiers_on = false
+  
+  if anchor == 0 then
+    vb.views.time_slider.value = -time
+  else
+    vb.views.time_slider.value = time
+  end   
+  
+  vb.views.time_multiplier_rotary.value = time_multiplier
+  vb.views.curve_slider.value = curve_intensity[1]
+  vb.views.offset_slider.value = -offset
+  vb.views.offset_multiplier_rotary.value = offset_multiplier
+  
+  vb.views.vol_min_box.value = flags.vol_min
+  vb.views.vol_slider.value = curve_intensity[2]
+  vb.views.vol_max_box.value = flags.vol_max
+  
+  vb.views.pan_min_box.value = flags.pan_min
+  vb.views.pan_slider.value = curve_intensity[3]
+  vb.views.pan_max_box.value = flags.pan_max
+  
+  vb.views.fx_min_box.value = flags.fx_min
+  vb.views.fx_slider.value = curve_intensity[4]
+  vb.views.fx_max_box.value = flags.fx_max
+  
+  set_theme_colors()
+  update_vol_pan_fx_bitmaps()
+  update_valuefields()
+  update_anchor_bitmaps()
+  update_collision_bitmaps()
+  update_all_curve_displays()
+  
+  vb_notifiers_on = true
+
   return true
 end
 
@@ -2485,7 +2572,10 @@ local function mod_arrow_key(control, alt_control, multiplier, repeated)
       alt_control_val = alt_control_val + (increment*math.abs(multiplier))
     elseif control_val == control_min_max[-sign] then
       if alt_control_val == alt_control_min_max[-1] then
-        control.value = control_val + increment*multiplier
+        control_val = control_val + increment*multiplier
+        if control_val < control_min_max[-1] then control_val = control_min_max[-1] end
+        if control_val > control_min_max[1] then control_val = control_min_max[1] end
+        control.value = control_val
       end
       alt_control_val = alt_control_val - (increment*math.abs(multiplier))
     end
@@ -2519,6 +2609,16 @@ local function alt_right()
   vb.views.curve_type_2.bitmap = "Bitmaps/curve2pressed.bmp"
   curve_type[1] = 2
   update_curve_display(1)
+  queue_processing()
+
+end
+
+--CHANGE ANCHOR------------------------------------
+local function change_anchor(type, orientation)
+
+  if type then anchor_type = type end
+  if orientation then anchor = orientation end
+  update_all_controls()
   queue_processing()
 
 end
@@ -3672,6 +3772,8 @@ local function show_window()
         
         elseif key.modifiers == "control" then
         
+          if key.name == "z" then song:undo() end
+          if key.name == "y" then song:redo() end
           if key.name == "space" then space_key() end
           if key.name == "up" then 
             mod_arrow_key(
@@ -3691,9 +3793,15 @@ local function show_window()
         
         --elseif key.modifiers == "shift + alt" then
         
-        --elseif key.modifiers == "shift + control" then
+        elseif key.modifiers == "shift + control" then
         
-        --elseif key.modifiers == "alt + control" then
+          if key.name == "z" then song:redo() end
+        
+        elseif key.modifiers == "alt + control" then
+           if key.name == "left" then change_anchor(1, nil) end
+           if key.name == "right" then change_anchor(2, nil) end
+           if key.name == "up" then change_anchor(nil, 0) end
+           if key.name == "down" then change_anchor(nil, 1) end
         
         --elseif key.modifiers == "shift + alt + control" then
         
@@ -3752,6 +3860,8 @@ local function show_window()
         
         elseif key.modifiers == "control" then
         
+          if key.name == "z" then song:undo() end
+          if key.name == "y" then song:redo() end
           if key.name == "up" then 
             mod_arrow_key(
               vb.views.time_slider,
@@ -3772,7 +3882,9 @@ local function show_window()
         
         --elseif key.modifiers == "shift + alt" then
         
-        --elseif key.modifiers == "shift + control" then
+        elseif key.modifiers == "shift + control" then
+        
+          if key.name == "z" then song:redo() end
         
         --elseif key.modifiers == "alt + control" then
         
@@ -3812,8 +3924,7 @@ local function show_window()
     send_key_release = true
   }
   
-  get_theme_data()
-  
+  get_theme_data()  
   set_theme_colors()
   
   --create the dialog if it show the dialog window
@@ -3847,7 +3958,10 @@ end
 
 --RESTORE REFORM WINDOW----------------------------------------------------
 local function restore_reform_window()
-  if valid_selection then show_window() end
+  if valid_selection then 
+    show_window() 
+    update_all_controls()
+  end
 end
 
 --STRUMIFY LINE AT EDIT CURSOR----------------------------------------------
@@ -3901,7 +4015,7 @@ renoise.tool():add_menu_entry {
 }
 
 renoise.tool():add_menu_entry {
-  name = "Main Menu:Tools:Strumify Line at Edit Cursor", 
+  name = "Main Menu:Tools:Reform:Strumify Line at Edit Cursor", 
   invoke = function() strumify_line_at_edit_cursor() end
 }
 
