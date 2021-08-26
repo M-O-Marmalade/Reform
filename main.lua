@@ -109,6 +109,9 @@ local selected_notes = {} --contains all of our notes to be processed
     
     flags = {      
       write --tells whether this note should overwrite whatever is at the same index as it is
+      vol_re --tells whether the volume was distributed or not previously
+      pan_re --tells whether the panning was distributed or not previously
+      fx_re --tells whether the fx amount was distributed or not previously
       clear --tells whether this note should clear the index it is at when it leaves
       restore --tells whether this note should restore anything next time restoration occurs          
     }
@@ -138,6 +141,9 @@ local flags = {
   redistribute = false,
   our_notes = false,  --true == keep later notes, false == keep earlier notes
   wild_notes = true,  --true == keep selected notes, false == keep wild notes
+  vol_changed = false,
+  pan_changed = false,
+  fx_changed = false,
   
   vol = false,
   vol_re = false,
@@ -1072,7 +1078,7 @@ local function store_note(s,p,t,c,l,counter)
     selected_notes[counter].rel_line_pos = l
 
     --initalize our flags so that the note will leave an empty space behind when it moves
-    selected_notes[counter].flags = {write = true, clear = true, restore = false}
+    selected_notes[counter].flags = {write = true, clear = true, restore = false, vol_re=false, pan_re=false, fx_re=false}
     
     --increment our index counter by one, as we have just finished storing one new note in our table
     counter = counter + 1
@@ -1189,6 +1195,73 @@ local function find_selected_notes()
   return true
 end
 
+--CALCULATE VOL PLACEMENTS--------------------------------
+local function calculate_vol_placements()
+
+  --find the least and greatest volume values in selection
+  local least_vol,greatest_vol = 128,0  
+  for k,note in ipairs(selected_notes) do
+    if note.volume_value > greatest_vol and note.volume_value <= 255 then
+      greatest_vol = note.volume_value 
+    end
+    if note.volume_value < least_vol and note.volume_value <= 255 then
+      least_vol = note.volume_value
+    end
+  end
+  if least_vol == 255 then least_vol = 128 end
+  if greatest_vol == 255 then greatest_vol = 128 end
+  flags.vol_orig_min, flags.vol_min = least_vol, least_vol
+  flags.vol_orig_max, flags.vol_max = greatest_vol, greatest_vol
+  --print("least_vol: " .. least_vol)
+  --print("greatest_vol: " .. greatest_vol)
+
+end
+
+--CALCULATE PAN PLACEMENTS--------------------------------
+local function calculate_pan_placements()
+
+  --find the least and greatest panning values in selection
+  local least_pan,greatest_pan = 128,0  
+  for k,note in ipairs(selected_notes) do    
+    local pan_val = note.panning_value
+    
+    if pan_val == 255 then pan_val = 64 end
+    
+    if pan_val > greatest_pan and pan_val <= 128 then
+      greatest_pan = pan_val
+    end
+    if pan_val < least_pan and pan_val <= 128 then
+      least_pan = pan_val
+    end
+  end
+  flags.pan_orig_min, flags.pan_min = least_pan, least_pan
+  flags.pan_orig_max, flags.pan_max = greatest_pan, greatest_pan
+  --print("least_pan: " .. least_pan)
+  --print("greatest_pan: " .. greatest_pan)
+
+end
+
+--CALCULATE PAN PLACEMENTS------------------------------------
+local function calculate_pan_placements()
+
+  local least_fx,greatest_fx = 255,0  
+  for k,note in ipairs(selected_notes) do    
+    local fx_val = note.effect_amount_value
+    
+    if fx_val > greatest_fx and fx_val <= 255 then
+      greatest_fx = fx_val
+    end
+    if fx_val < least_fx and fx_val <= 255 then
+      least_fx = fx_val
+    end
+  end
+  flags.fx_orig_min, flags.fx_min = least_fx, least_fx
+  flags.fx_orig_max, flags.fx_max = greatest_fx, greatest_fx
+  --print("least_fx: " .. least_fx)
+  --print("greatest_fx: " .. greatest_fx)
+
+end
+
 --CALCULATE NOTE PLACEMENTS------------------------------------------
 local function calculate_note_placements()
   
@@ -1238,59 +1311,23 @@ local function calculate_note_placements()
       if amount_of_notes == 1 then note.redistributed_placement_in_note_range = earliest_placement end
   end
   
+  return true
+end
+
+--CALCULATE ALL PLACEMENTS-----------------------------
+local function calculate_all_placements()
+  
+  calculate_note_placements()
+  
   --find the least and greatest volume values in selection
-  local least_vol,greatest_vol = 128,0  
-  for k,note in ipairs(selected_notes) do
-    if note.volume_value > greatest_vol and note.volume_value <= 255 then
-      greatest_vol = note.volume_value 
-    end
-    if note.volume_value < least_vol and note.volume_value <= 255 then
-      least_vol = note.volume_value
-    end
-  end
-  if least_vol == 255 then least_vol = 128 end
-  if greatest_vol == 255 then greatest_vol = 128 end
-  flags.vol_orig_min, flags.vol_min = least_vol, least_vol
-  flags.vol_orig_max, flags.vol_max = greatest_vol, greatest_vol
-  --print("least_vol: " .. least_vol)
-  --print("greatest_vol: " .. greatest_vol)
+  calculate_vol_placements()
   
   --find the least and greatest panning values in selection
-  local least_pan,greatest_pan = 128,0  
-  for k,note in ipairs(selected_notes) do    
-    local pan_val = note.panning_value
-    
-    if pan_val == 255 then pan_val = 64 end
-    
-    if pan_val > greatest_pan and pan_val <= 128 then
-      greatest_pan = pan_val
-    end
-    if pan_val < least_pan and pan_val <= 128 then
-      least_pan = pan_val
-    end
-  end
-  flags.pan_orig_min, flags.pan_min = least_pan, least_pan
-  flags.pan_orig_max, flags.pan_max = greatest_pan, greatest_pan
-  --print("least_pan: " .. least_pan)
-  --print("greatest_pan: " .. greatest_pan)
+  calculate_pan_placements()
   
-    --find the least and greatest fx values in selection
-  local least_fx,greatest_fx = 255,0  
-  for k,note in ipairs(selected_notes) do    
-    local fx_val = note.effect_amount_value
-    
-    if fx_val > greatest_fx and fx_val <= 255 then
-      greatest_fx = fx_val
-    end
-    if fx_val < least_fx and fx_val <= 255 then
-      least_fx = fx_val
-    end
-  end
-  flags.fx_orig_min, flags.fx_min = least_fx, least_fx
-  flags.fx_orig_max, flags.fx_max = greatest_fx, greatest_fx
-  --print("least_fx: " .. least_fx)
-  --print("greatest_fx: " .. greatest_fx)
-  
+  --find the least and greatest fx values in selection
+  calculate_pan_placements()
+
   return true
 end
 
@@ -1745,7 +1782,8 @@ stclk(6)
   local vol_val = selected_notes[counter].volume_value
   if vol_val == 255 then vol_val = 128 end
   if vol_val <= 128 then 
-    if flags.vol then      
+    if flags.vol then
+      selected_notes[counter].flags.vol = true
       if flags.vol_re then
         vol_val = remap_range(
           counter,
@@ -1765,7 +1803,9 @@ stclk(6)
       end
       
       vol_val = apply_curve(vol_val,2)
-      
+    
+    else
+      selected_notes[counter].flags.vol = false
     end
   end
   
@@ -1776,7 +1816,8 @@ stclk(6)
   local pan_val = selected_notes[counter].panning_value
   if pan_val == 255 then pan_val = 64 end
   if pan_val <= 128 then 
-    if flags.pan then      
+    if flags.pan then
+      selected_notes[counter].flags.pan = true 
       if flags.pan_re then
         pan_val = remap_range(
           counter,
@@ -1796,7 +1837,9 @@ stclk(6)
       end
       
       pan_val = apply_curve(pan_val,3)
-      
+    
+    else
+      selected_notes[counter].flags.pan = false
     end
   end
   
@@ -1806,7 +1849,8 @@ stclk(6)
   
   local fx_val = selected_notes[counter].effect_amount_value
   if fx_val <= 255 then 
-    if flags.fx then      
+    if flags.fx then
+      selected_notes[counter].flags.fx = true
       if flags.fx_re then
         fx_val = remap_range(
           counter,
@@ -1827,6 +1871,8 @@ stclk(6)
       
       fx_val = apply_curve(fx_val,4)
       
+    else
+      selected_notes[counter].flags.fx = false
     end
   end
   
@@ -2117,15 +2163,42 @@ local function detect_changes_to_our_note(note)
     
     --get access to the note's current column (location)
     local column = song:pattern(note.current_location.p):track(note.current_location.t):line(note.current_location.l):note_column(note.current_location.c)
-  
+    
     --update all of the values for this note (note,instr,vol,pan,dly,fx)
     note.note_value = column.note_value
     note.instrument_value = column.instrument_value
     note.effect_number_value = column.effect_number_value
     --local delay_value = column.delay_value
-    if not flags.vol then note.volume_value = column.volume_value end
-    if not flags.pan then note.panning_value = column.panning_value end
-    if not flags.fx then note.effect_amount_value = column.effect_amount_value end
+    
+    if not flags.vol and not note.flags.vol then 
+      local vol = column.volume_value
+      if vol ~= note.volume_value then
+        flags.vol_changed = true
+        note.volume_value = vol
+      else
+        flags.vol_changed = false
+      end
+    end
+    
+    if not flags.pan and not note.flags.pan then 
+      local pan = column.panning_value
+      if pan ~= note.panning_value then
+        flags.pan_changed = true
+        note.panning_value = pan
+      else
+        flags.pan_changed = false
+      end
+    end
+    
+    if not flags.fx and not note.flags.fx then 
+      local fx = column.effect_amount_value
+      if fx ~= note.effect_amount_value then
+        flags.fx_changed = true
+        note.effect_amount_value = vol
+      else
+        flags.fx_changed = false
+      end
+    end
   
   end
 
@@ -2174,6 +2247,15 @@ local function detect_changes_to_our_note(note)
     
   }
 --]]  
+
+end
+
+--DETECT CHANGES TO NOTES-----------------------------
+local function detect_changes_to_notes()
+
+  for _,v in ipairs(selected_notes) do
+    detect_changes_to_our_note(v)
+  end  
 
 end
 
@@ -3562,8 +3644,11 @@ local function show_window()
               bitmap = "Bitmaps/volbutton.bmp",
               mode = "button_color",
               notifier = function()
+                detect_changes_to_notes()
+                if flags.vol_changed then calculate_vol_placements() end
                 flags.vol = not flags.vol
                 vb.views.vol_column.visible = flags.vol
+                update_all_controls()
                 if flags.vol then vb.views.volbutton.bitmap = "Bitmaps/volbuttonpressed.bmp"
                 else vb.views.volbutton.bitmap = "Bitmaps/volbutton.bmp" end
                 queue_processing()
@@ -3576,8 +3661,11 @@ local function show_window()
               bitmap = "Bitmaps/panbutton.bmp",
               mode = "button_color",
               notifier = function()
+                detect_changes_to_notes()
+                if flags.pan_changed then calculate_pan_placements() end
                 flags.pan = not flags.pan
                 vb.views.pan_column.visible = flags.pan
+                update_all_controls()
                 if flags.pan then vb.views.panbutton.bitmap = "Bitmaps/panbuttonpressed.bmp"
                 else vb.views.panbutton.bitmap = "Bitmaps/panbutton.bmp" end
                 queue_processing()
@@ -3590,8 +3678,11 @@ local function show_window()
               bitmap = "Bitmaps/fxbutton.bmp",
               mode = "button_color",
               notifier = function()
+                detect_changes_to_notes()
+                if flags.vol_changed then calculate_pan_placements() end
                 flags.fx = not flags.fx
                 vb.views.fx_column.visible = flags.fx
+                update_all_controls()
                 if flags.fx then vb.views.fxbutton.bitmap = "Bitmaps/fxbuttonpressed.bmp"
                 else vb.views.fxbutton.bitmap = "Bitmaps/fxbutton.bmp" end
                 queue_processing()
@@ -3942,7 +4033,7 @@ local function reform_main()
   if result then result = add_document_notifiers() end
   if result then result = get_selection() end
   if result then result = find_selected_notes() end
-  if result then result = calculate_note_placements() end
+  if result then result = calculate_all_placements() end
   if result then result = update_start_pos() end
   if result then result = get_theme_data() end
   if result then result = show_window() end
@@ -3972,7 +4063,7 @@ local function strumify_line_at_edit_cursor()
   if result then result = select_line_at_edit_cursor() end
   if result then result = get_selection() end
   if result then result = find_selected_notes() end
-  if result then result = calculate_note_placements() end
+  if result then result = calculate_all_placements() end
   if result then result = update_start_pos() end
   if result then result = get_theme_data() end
   if result then result = show_window() end
