@@ -1,7 +1,7 @@
 --Reform - main.lua--
 
 --DEBUG CONTROLS-------------------------------
-_AUTO_RELOAD_DEBUG = true
+_AUTO_RELOAD_DEBUG = false
 
 local debugvars = {
   extra_curve_controls = false,
@@ -2705,6 +2705,51 @@ local function change_anchor(type, orientation)
 
 end
 
+--CHANGE OUR COLLISION MODE--------------------------------
+local function change_our_collision_mode(bool)
+  
+  flags.our_notes = bool
+  update_all_controls()
+  queue_processing()
+  
+end
+
+--CHANGE WILD COLLISION MODE--------------------------------
+local function change_wild_collision_mode(bool)
+  
+  flags.wild_notes = bool
+  update_all_controls()
+  queue_processing()
+  
+end
+
+--TOGGLE OVERFLOW MODE--------------------------------
+local function toggle_overflow_mode()
+
+  flags.overflow = not flags.overflow
+  update_all_controls()
+  queue_processing()
+
+end
+
+--TOGGLE CONDENSE MODE-------------------------------
+local function toggle_condense_mode()
+
+  flags.condense = not flags.condense
+  update_all_controls()
+  queue_processing()
+
+end
+
+--TOGGLE REDISTRIBUTE MODE-----------------------
+local function toggle_redistribute_mode()
+
+  flags.redistribute = not flags.redistribute
+  update_all_controls()
+  queue_processing()
+
+end
+
 --SHOW WINDOW---------------------------------------------------- 
 local function show_window()
 
@@ -3806,7 +3851,6 @@ local function show_window()
       if not key.repeated then
       
         if key.modifiers == "" then
-          
           if key.name == "esc" then dialog:close() end        
           if key.name == "space" then space_key() end          
           if key.name == "up" then up_key() end
@@ -3816,7 +3860,6 @@ local function show_window()
           if key.name == "tab" then tab_key() end
           
         elseif key.modifiers == "shift" then
-        
           if key.name == "space" then shift_space_key() end          
           if key.name == "tab" then shift_tab_key() end
           if key.name == "up" then 
@@ -3836,7 +3879,6 @@ local function show_window()
           end
         
         elseif key.modifiers == "alt" then
-        
           if key.name == "up" then 
             mod_arrow_key(
               vb.views.curve_slider,
@@ -3862,7 +3904,6 @@ local function show_window()
           end
         
         elseif key.modifiers == "control" then
-        
           if key.name == "z" then song:undo() end
           if key.name == "y" then song:redo() end
           if key.name == "space" then space_key() end
@@ -3885,8 +3926,14 @@ local function show_window()
         --elseif key.modifiers == "shift + alt" then
         
         elseif key.modifiers == "shift + control" then
-        
           if key.name == "z" then song:redo() end
+          if key.name == "o" then toggle_overflow_mode() end
+          if key.name == "c" then toggle_condense_mode() end
+          if key.name == "r" then toggle_redistribute_mode() end
+          if key.name == "up" then change_our_collision_mode(false) end
+          if key.name == "down" then change_our_collision_mode(true) end
+          if key.name == "left" then change_wild_collision_mode(false) end
+          if key.name == "right" then change_wild_collision_mode(true) end
         
         elseif key.modifiers == "alt + control" then
            if key.name == "left" then change_anchor(1, nil) end
@@ -3901,7 +3948,6 @@ local function show_window()
       elseif key.repeated then
       
         if key.modifiers == "" then
-        
           if key.name == "up" then up_key() end
           if key.name == "down" then down_key() end
           if key.name == "left" then left_key() end
@@ -3909,7 +3955,6 @@ local function show_window()
           if key.name == "tab" then tab_key() end
         
         elseif key.modifiers == "shift" then
-        
           if key.name == "tab" then shift_tab_key() end
           if key.name == "up" then 
             mod_arrow_key(
@@ -3930,7 +3975,6 @@ local function show_window()
           end
         
         elseif key.modifiers == "alt" then
-        
           if key.name == "up" then 
             mod_arrow_key(
               vb.views.curve_slider,
@@ -3950,7 +3994,6 @@ local function show_window()
           end
         
         elseif key.modifiers == "control" then
-        
           if key.name == "z" then song:undo() end
           if key.name == "y" then song:redo() end
           if key.name == "up" then 
@@ -3974,7 +4017,6 @@ local function show_window()
         --elseif key.modifiers == "shift + alt" then
         
         elseif key.modifiers == "shift + control" then
-        
           if key.name == "z" then song:redo() end
         
         --elseif key.modifiers == "alt + control" then
