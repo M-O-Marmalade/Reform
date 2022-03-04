@@ -1,7 +1,7 @@
 --Reform - main.lua--
 
 --DEBUG CONTROLS-------------------------------
-_AUTO_RELOAD_DEBUG = true
+_AUTO_RELOAD_DEBUG = false
 
 local debugvars = {
   extra_curve_controls = false,
@@ -2779,7 +2779,7 @@ local function show_window()
                 mode = "justify",                
                 vb:column {                
                   vb:bitmap { --icon at top of time controls
-                    bitmap = "Bitmaps/clock.bmp",
+                    bitmap = "Bitmaps/scale.bmp",
                     mode = "body_color"
                   }
                 }
