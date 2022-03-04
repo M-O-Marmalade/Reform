@@ -3698,7 +3698,7 @@ local function show_window()
               width = 15,
               height = 15,
               notifier = function()
-                app:open_url("https://xephyrpanda.wixsite.com/citrus64/reform")
+                app:open_url("https://www.aqu.surf/reform")
               end
             } --close help button   
           } --close help horizontal aligner    
