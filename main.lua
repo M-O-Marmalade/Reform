@@ -1,42 +1,42 @@
 --Reform - main.lua--
 
 --DEBUG CONTROLS-------------------------------
-_AUTO_RELOAD_DEBUG = false
+-- _AUTO_RELOAD_DEBUG = false
 
-local debugvars = {
-  extra_curve_controls = false,
-  print_notifier_attach = false,
-  print_notifier_trigger = false,
-  print_queue_processing = false,
-  print_valuefield = false, --prints info from valuefields when set true
-  print_clocks = false, --prints out profiling clocks in different parts of the code when set true
-  clocktotals = {},
-  tempclocks = {}
-}
+-- local debugvars = {
+--   extra_curve_controls = false,
+--   print_notifier_attach = false,
+--   print_notifier_trigger = false,
+--   print_queue_processing = false,
+--   print_valuefield = false, --prints info from valuefields when set true
+--   print_clocks = false, --prints out profiling clocks in different parts of the code when set true
+--   clocktotals = {},
+--   tempclocks = {}
+-- }
 
-local function rstclk(num)
-  if debugvars.print_clocks then
-    debugvars.clocktotals[num] = 0
-  end
-end
+-- local function rstclk(num)
+--   if debugvars.print_clocks then
+--     debugvars.clocktotals[num] = 0
+--   end
+-- end
 
-local function stclk(num)
-  if debugvars.print_clocks then
-    debugvars.tempclocks[num] = os.clock()
-  end
-end
+-- local function stclk(num)
+--   if debugvars.print_clocks then
+--     debugvars.tempclocks[num] = os.clock()
+--   end
+-- end
 
-local function adclk(num)
-  if debugvars.print_clocks then    
-    debugvars.clocktotals[num] = debugvars.clocktotals[num] + (os.clock() - debugvars.tempclocks[num])
-  end
-end
+-- local function adclk(num)
+--   if debugvars.print_clocks then    
+--     debugvars.clocktotals[num] = debugvars.clocktotals[num] + (os.clock() - debugvars.tempclocks[num])
+--   end
+-- end
 
-local function rdclk(num,msg)
-  if debugvars.print_clocks then
-    print(msg .. debugvars.clocktotals[num] or "nil")
-  end 
-end
+-- local function rdclk(num,msg)
+--   if debugvars.print_clocks then
+--     print(msg .. debugvars.clocktotals[num] or "nil")
+--   end 
+-- end
 
 --"GLOBALS"---------------------------------------------------------------------
 local app = renoise.app() 
@@ -1530,13 +1530,14 @@ end
 --IS WILD-----------------------------------------
 local function is_wild(index,counter)
 
+  --return true if no notes were found to be storing data at this spot
   if not placed_notes[index.p] then return true end
   if not placed_notes[index.p][index.t] then return true end
   if not placed_notes[index.p][index.t][index.l] then return true end
-  if not placed_notes[index.p][index.t][index.l][index.c] then 
-    return true--return true if no notes were found to be storing data at this spot
+  if not placed_notes[index.p][index.t][index.l][index.c] then return true
   
-  else return false end --return false if we found one of our notes already in this spot
+  --return false if we found one of our notes already in this spot
+  else return false end
   
 end
 
@@ -1591,6 +1592,9 @@ local function get_existing_note(index,counter)
         selected_notes[counter].flags.write = true --set this note's write flag to true
         selected_notes[counter].flags.clear = false --set this note's clear flag to false
         selected_notes[counter].flags.restore = false  --set this note's restore flag to false
+
+        --set the overwritten note's write flag false
+        selected_notes[placed_notes[index.p][index.t][index.l][index.c]].flags.write = false
         
       else  --else, if we are not overwriting our own notes
       
@@ -1700,7 +1704,7 @@ end
 --PLACE NEW NOTE----------------------------------------------
 local function place_new_note(counter)
 
-stclk(2)
+--stclk(2)
 
   --decide which time value to use (typed or sliders)
   local time_to_use
@@ -1752,8 +1756,8 @@ stclk(2)
   --update this note's rel_line_pos
   selected_notes[counter].rel_line_pos = new_line
   
-adclk(2)
-stclk(3)
+--adclk(2)
+--stclk(3)
   
   local index = find_correct_index(
     selected_notes[counter].original_index.s,
@@ -1765,19 +1769,19 @@ stclk(3)
   
   local column = song:pattern(index.p):track(index.t):line(index.l):note_column(index.c)
 
-adclk(3)
-stclk(4)
+--adclk(3)
+--stclk(4)
   
   --store the note from the new spot we have moved to
   get_existing_note(index, counter)
 
-adclk(4)
-stclk(5)
+--adclk(4)
+--stclk(5)
   
   update_current_note_location(counter, index)
 
-adclk(5)  
-stclk(6)
+--adclk(5)  
+--stclk(6)
   
   local vol_val = selected_notes[counter].volume_value
   if vol_val == 255 then vol_val = 128 end
@@ -1893,7 +1897,7 @@ stclk(6)
     )
   end
   
-adclk(6)
+--adclk(6)
   
   --add note to our placed_notes table
   add_to_placed_notes(index,counter)
@@ -2276,9 +2280,7 @@ local function apply_reform()
     return false
   end
   
-  for _,v in ipairs(selected_notes) do
-    detect_changes_to_our_note(v)
-  end  
+  detect_changes_to_notes()
   
   table.clear(columns_overflowed_into)
   table.clear(note_collisions.ours)
