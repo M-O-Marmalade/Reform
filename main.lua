@@ -2836,7 +2836,7 @@ local function show_window()
                 mode = "center",                
                 vb:valuefield {
                   id = "time_text",
-                  tooltip = "Type precise Time values here!",
+                  tooltip = "Type precise Time Scale values here!",
                   align = "center",
                   min = -256,
                   max = 256,
@@ -2878,7 +2878,7 @@ local function show_window()
                 mode = "center",                            
                 vb:minislider {    
                   id = "time_slider", 
-                  tooltip = "Time", 
+                  tooltip = "Time Scale", 
                   min = -1, 
                   max = 1, 
                   value = time-1, 
@@ -2902,7 +2902,7 @@ local function show_window()
                 mode = "justify",                
                 vb:rotary { 
                   id = "time_multiplier_rotary", 
-                  tooltip = "Time Slider Multiplier",
+                  tooltip = "Time Scale Multiplier",
                   min = 1, 
                   max = 63, 
                   value = time_multiplier, 
@@ -2937,7 +2937,7 @@ local function show_window()
                 mode = "center",                
                 vb:valuefield {
                   id = "curve_text",
-                  tooltip = "Type precise Curve values here!",
+                  tooltip = "Type precise Time Curve values here!",
                   align = "center",
                   min = -1,
                   max = 1,
@@ -2977,7 +2977,7 @@ local function show_window()
                 mode = "center",                            
                 vb:minislider {    
                   id = "curve_slider", 
-                  tooltip = "Curve", 
+                  tooltip = "Time Curve", 
                   min = -1, 
                   max = 1, 
                   value = curve_intensity[1], 
@@ -3051,7 +3051,7 @@ local function show_window()
                 mode = "center",                
                 vb:valuefield {
                   id = "offset_text",
-                  tooltip = "Type precise Offset values here!",
+                  tooltip = "Type precise Time Shift values here!",
                   align = "center",
                   min = -256,
                   max = 256,
@@ -3091,7 +3091,7 @@ local function show_window()
                 mode = "center",              
                 vb:minislider {    
                   id = "offset_slider", 
-                  tooltip = "Offset", 
+                  tooltip = "Time Shift", 
                   min = -1, 
                   max = 1, 
                   value = 0, 
@@ -3111,7 +3111,7 @@ local function show_window()
                 mode = "justify",              
                 vb:rotary { 
                   id = "offset_multiplier_rotary", 
-                  tooltip = "Offset Slider Multiplier", 
+                  tooltip = "Time Shift Multiplier", 
                   min = 1, 
                   max = 63, 
                   value = 1, 
@@ -3153,7 +3153,7 @@ local function show_window()
           
           vb:valuebox {
             id = "vol_max_box",
-            tooltip = "Volume Hi",
+            tooltip = "Volume High",
             width = 50,
             height = 15,
             min = 0,
@@ -3218,7 +3218,7 @@ local function show_window()
           
           vb:valuebox {
             id = "vol_min_box",
-            tooltip = "Volume Lo",
+            tooltip = "Volume Low",
             width = 50,
             height = 15,
             min = 0,
@@ -3284,7 +3284,7 @@ local function show_window()
           
           vb:valuebox {
             id = "pan_max_box",
-            tooltip = "Pan Hi",
+            tooltip = "Pan High",
             width = 50,
             height = 15,
             min = 0,
@@ -3349,7 +3349,7 @@ local function show_window()
             
           vb:valuebox {
             id = "pan_min_box",
-            tooltip = "Pan Lo",
+            tooltip = "Pan Low",
             width = 50,
             height = 15,
             min = 0,
@@ -3415,7 +3415,7 @@ local function show_window()
           
           vb:valuebox {
             id = "fx_max_box",
-            tooltip = "FX Amount Hi",
+            tooltip = "FX Amount High",
             width = 50,
             height = 15,
             min = 0,
@@ -3480,7 +3480,7 @@ local function show_window()
             
           vb:valuebox {
             id = "fx_min_box",
-            tooltip = "FX Amount Lo",
+            tooltip = "FX Amount Low",
             width = 50,
             height = 15,
             min = 0,
@@ -3539,7 +3539,7 @@ local function show_window()
             vb:column {
               vb:button { 
                 id = "overflow_button", 
-                tooltip = "Use available empty columns if necessary",
+                tooltip = "Use available empty columns if necessary (to avoid note collisions)",
                 bitmap = "Bitmaps/overflow.bmp",
                 width = 36,
                 height = 23,
@@ -3552,7 +3552,7 @@ local function show_window()
               },            
               vb:button { 
                 id = "condense_button",
-                tooltip = "Use as few columns as possible",
+                tooltip = "Use as few columns as possible (without any note collisions)",
                 bitmap = "Bitmaps/condense.bmp",
                 width = 36,
                 height = 23,
