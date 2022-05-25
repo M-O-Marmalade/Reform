@@ -1,42 +1,182 @@
 --Reform - main.lua--
 
+--[[======TABLE OF CONTENTS======
+
+
+-- DEBUG CONTROLS --
+
+
+-- FULL-SCOPE VARIABLES --
+
+
+-- NOTIFIERS/GETTERS & INITIALIZATION --
+  reset_variables()
+  get_theme_data()
+  set_theme_colors()
+  update_valuefields()
+  update_anchor_bitmaps()
+  update_collision_bitmaps()
+  update_curve_type_bitmaps()  (unused)
+  update_vol_pan_fx_bitmaps()
+  reset_view()
+  deactivate_controls()
+  activate_controls()
+  release_document()
+  new_document()
+  add_document_notifiers()
+  add_pattern_length_notifier(p)
+    pattern_length_notifier
+  get_pattern_length_at_seq(s)
+  sequence_count_notifier() - used in get_sequence_length()
+  get_sequence_length()
+  track_count_notifier() - used in get_track_count()
+  get_track_count()
+  add_visible_note_columns_notifier(t)
+    visible_note_columns_notifier
+  get_visible_note_columns(t)
+  add_visible_effect_columns_notifier(t)
+    visible_effect_columns_notifier
+  get_visible_effect_columns(t)
+
+
+-- MATH/UTILITY FUNCTIONS --
+  remap_range(val,lo1,hi1,lo2,hi2) - converts a value in range lo1-hi1 to lo2-hi2
+  sign(number) - returns 1 or -1 depending on the +/- of a number
+
+
+-- SONG DATA MANIPULTAION --
+  store_note(s,p,t,c,l,counter)
+  get_selection()
+  select_line_at_edit_cursor()
+  find_selected_notes()
+  calculate_vol_placements()
+  calculate_pan_placements()
+  calculate_fx_placements()
+  calculate_note_placements()
+  calculate_all_placements()
+  get_index(s,t,l,c)
+  find_correct_index(s,p,t,l,c)
+  set_track_visibility(t)
+  set_note_column_values(column,vals)
+  restore_old_note(counter)
+  is_wild(index)
+  get_existing_note(index,counter)
+  update_current_note_location(counter,new_index)
+  add_to_placed_notes(index,counter)
+  apply_curve(placement,type)
+  place_new_note(counter)
+  update_start_pos()
+
+
+-- BEZIER CURVES --
+  binom(n,k) - BINOMIAL COEFFECIENT
+  bern(val,v,n) - BERNSTEIN BASIS POLYNOMIAL
+  get_curve(t,points)
+  init_buffers(i)
+  calculate_curve(i)
+  rasterize_curve(i)
+  update_curve_grid(i)
+  update_curve_display(i)
+  update_all_curve_displays()
+
+
+-- MAIN PROCESSING --
+  detect_changes_to_our_note(note)
+  detect_changes_to_notes()
+  apply_reform()
+  apply_reform_notifier()
+  add_reform_idle_notifier()
+  queue_processing()
+  strumify()
+  update_all_controls() -- belongs in VIEWBUILDER, but is used in hotkeys
+
+
+-- FOCUSED HOTKEYS --
+  space_key()
+  shift_space_key()
+  up_key()
+  down_key()
+  left_key()
+  right_key()
+  tab_key()
+  shift_tab_key()
+  mod_arrow_key(control, alt_control, multiplier, repeated)
+  alt_left()
+  alt_right()
+  change_anchor(type, orientation)
+  change_our_collision_mode(bool)
+  change_wild_collision_mode(bool)
+  toggle_overflow_mode()
+  toggle_condense_mode()
+  toggle_redistribute_mode()
+
+
+-- VIEWBUILDER --
+  show_window()
+    key_handler(dialog,key)
+  reform_main()
+  restore_reform_window()
+  strumify_line_at_edit_cursor()
+
+
+-- MENU ENTRIES --
+  Pattern Editor:Reform:Reform Selection...
+  Pattern Editor:Reform:Restore Reform Window
+  Pattern Editor:Reform:Strumify Line at Edit Cursor
+  Main Menu:Tools:Reform:Reform Selection...
+  Main Menu:Tools:Reform:Restore Reform Window
+  Main Menu:Tools:Reform:Strumify Line at Edit Cursor
+
+
+-- ASSIGNABLE HOTKEYS --
+  Pattern Editor:Selection:Reform Selection
+  Pattern Editor:Selection:Restore Reform Window
+  Pattern Editor:Selection:Strumify Line at Edit Cursor
+
+
+======TABLE OF CONTENTS END====== --]]
+
+
 --DEBUG CONTROLS-------------------------------
--- _AUTO_RELOAD_DEBUG = false
 
--- local debugvars = {
---   extra_curve_controls = false,
---   print_notifier_attach = false,
---   print_notifier_trigger = false,
---   print_queue_processing = false,
---   print_valuefield = false, --prints info from valuefields when set true
---   print_clocks = false, --prints out profiling clocks in different parts of the code when set true
---   clocktotals = {},
---   tempclocks = {}
--- }
+--[[
+_AUTO_RELOAD_DEBUG = false
 
--- local function rstclk(num)
---   if debugvars.print_clocks then
---     debugvars.clocktotals[num] = 0
---   end
--- end
+local debugvars = {
+  extra_curve_controls = false,
+  print_notifier_attach = false,
+  print_notifier_trigger = false,
+  print_queue_processing = false,
+  print_valuefield = false, --prints info from valuefields when set true
+  print_clocks = false, --prints out profiling clocks in different parts of the code when set true
+  clocktotals = {},
+  tempclocks = {}
+}
 
--- local function stclk(num)
---   if debugvars.print_clocks then
---     debugvars.tempclocks[num] = os.clock()
---   end
--- end
+local function rstclk(num)
+  if debugvars.print_clocks then
+    debugvars.clocktotals[num] = 0
+  end
+end
 
--- local function adclk(num)
---   if debugvars.print_clocks then    
---     debugvars.clocktotals[num] = debugvars.clocktotals[num] + (os.clock() - debugvars.tempclocks[num])
---   end
--- end
+local function stclk(num)
+  if debugvars.print_clocks then
+    debugvars.tempclocks[num] = os.clock()
+  end
+end
 
--- local function rdclk(num,msg)
---   if debugvars.print_clocks then
---     print(msg .. debugvars.clocktotals[num] or "nil")
---   end 
--- end
+local function adclk(num)
+  if debugvars.print_clocks then    
+    debugvars.clocktotals[num] = debugvars.clocktotals[num] + (os.clock() - debugvars.tempclocks[num])
+  end
+end
+
+local function rdclk(num,msg)
+  if debugvars.print_clocks then
+    print(msg .. debugvars.clocktotals[num] or "nil")
+  end 
+end
+--]]
 
 --"GLOBALS"---------------------------------------------------------------------
 local app = renoise.app() 
@@ -258,93 +398,6 @@ local anchor = 0  -- 0 = top, 1 = bottom
 local anchor_type = 1 -- 1 = note, 2 = selection
 
 
---[[FUNCTIONS INDEX
-
---NOTIFIERS/GETTERS & INITIALIZATION--
-reset_variables()
-get_theme_data()
-set_theme_colors()
-update_valuefields()
-update_anchor_bitmaps()
-update_collision_bitmaps()
-reset_view()
-deactivate_controls()
-activate_controls()
-release_document()
-new_document()
-add_document_notifiers()
-add_pattern_length_notifier(p)
-get_pattern_length_at_seq(s)
-sequence_count_notifier() - used in get_sequence_length()
-get_sequence_length()
-track_count_notifier() - used in get_track_count()
-get_track_count()
-add_visible_note_columns_notifier(t)
-get_visible_note_columns(t)
-add_visible_effect_columns_notifier(t)
-get_visible_effect_columns(t)
-
---MATH/UTILITY FUNCTIONS--
-remap_range(val,lo1,hi1,lo2,hi2) - converts a value in range lo1-hi1 to lo2-hi2
-sign(number) - returns 1 or -1 depending on the +/- of a number
-
---SONG DATA MANIPULTAION--
-store_note(s,p,t,c,l,counter)
-get_selection()
-select_line_at_edit_cursor()
-find_selected_notes()
-calculate_note_placements()
-get_index(s,t,l,c)
-find_correct_index(s,p,t,l,c)
-set_track_visibility(t)
-set_note_column_values(column,vals)
-restore_old_note(counter)
-is_wild(index,counter)
-get_existing_note(index,counter)
-update_current_note_location(counter,new_index)
-add_to_placed_notes(index,counter)
-apply_curve(placement,type)
-place_new_note(counter)
-update_start_pos()
-
---BEZIER CURVES--
-binom(n,k) - BINOMIAL COEFFECIENT
-bern(val,v,n) - BERNSTEIN BASIS POLYNOMIAL
-get_curve(t,points)
-init_buffers(i)
-calculate_curve(i)
-rasterize_curve(i)
-update_curve_grid(i)
-update_curve_display(i)
-update_all_curve_displays()
-
---MAIN PROCESSING--
-apply_reform()
-apply_reform_notifier()
-add_reform_idle_notifier()
-queue_processing()
-strumify()
-update_all_controls() -- should really be with the vb stuff..
-
---HOTKEYS--
-space_key()
-shift_space_key()
-up_key()
-down_key()
-left_key()
-right_key()
-tab_key()
-shift_tab_key()
-
---VIEWBUILDER--
-show_window()
-key_handler(dialog,key)
-reform_main()
-restore_reform_window()
-strumify_line_at_edit_cursor()
---]]
-
-
 --RESET VARIABLES------------------------------
 local function reset_variables()
   
@@ -560,17 +613,17 @@ local function update_collision_bitmaps()
 end 
 
 --UPDATE CURVE TYPE BITMAPS------------------------
-local function update_curve_type_bitmaps()
+-- local function update_curve_type_bitmaps()
 
-  if curve_type[1] == 1 then
-    vb.views.curve_type_1.bitmap = "Bitmaps/curve1pressed.bmp"
-    vb.views.curve_type_2.bitmap = "Bitmaps/curve2.bmp"
-  else
-    vb.views.curve_type_1.bitmap = "Bitmaps/curve1.bmp"
-    vb.views.curve_type_2.bitmap = "Bitmaps/curve2pressed.bmp"
-  end
+--   if curve_type[1] == 1 then
+--     vb.views.curve_type_1.bitmap = "Bitmaps/curve1pressed.bmp"
+--     vb.views.curve_type_2.bitmap = "Bitmaps/curve2.bmp"
+--   else
+--     vb.views.curve_type_1.bitmap = "Bitmaps/curve1.bmp"
+--     vb.views.curve_type_2.bitmap = "Bitmaps/curve2pressed.bmp"
+--   end
 
-end
+-- end
 
 --UPDATE VOL PAN FX BITMAPS--------------------------
 local function update_vol_pan_fx_bitmaps()
@@ -1242,7 +1295,7 @@ local function calculate_pan_placements()
 end
 
 --CALCULATE PAN PLACEMENTS------------------------------------
-local function calculate_pan_placements()
+local function calculate_fx_placements()
 
   local least_fx,greatest_fx = 255,0  
   for k,note in ipairs(selected_notes) do    
@@ -1326,7 +1379,7 @@ local function calculate_all_placements()
   calculate_pan_placements()
   
   --find the least and greatest fx values in selection
-  calculate_pan_placements()
+  calculate_fx_placements()
 
   return true
 end
@@ -1528,7 +1581,7 @@ local function restore_old_note(counter)
 end
 
 --IS WILD-----------------------------------------
-local function is_wild(index,counter)
+local function is_wild(index)
 
   --return true if no notes were found to be storing data at this spot
   if not placed_notes[index.p] then return true end
