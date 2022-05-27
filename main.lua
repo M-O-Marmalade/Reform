@@ -3958,9 +3958,9 @@ local function show_window()
           else handled = false end
         
         elseif key.modifiers == "control" then
-          if key.name == "z" then song:undo()
-          elseif key.name == "y" then song:redo()
-          elseif key.name == "space" then space_key()
+          -- if key.name == "z" then song:undo()
+          -- elseif key.name == "y" then song:redo()
+          if key.name == "space" then space_key()
           elseif key.name == "up" then 
             mod_arrow_key(
               vb.views.time_slider,
@@ -3975,27 +3975,27 @@ local function show_window()
               -1
             )
 			
-		  else handled = false end
+		      else handled = false end
         
         --elseif key.modifiers == "shift + alt" then
         
         elseif key.modifiers == "shift + control" then
-          if key.name == "z" then song:redo()
-          elseif key.name == "o" then toggle_overflow_mode()
+          -- if key.name == "z" then song:redo()
+          if key.name == "o" then toggle_overflow_mode()
           elseif key.name == "c" then toggle_condense_mode()
           elseif key.name == "r" then toggle_redistribute_mode()
           elseif key.name == "up" then change_our_collision_mode(false)
           elseif key.name == "down" then change_our_collision_mode(true)
           elseif key.name == "left" then change_wild_collision_mode(false)
           elseif key.name == "right" then change_wild_collision_mode(true)
-		  else handled = false end
+		      else handled = false end
         
         elseif key.modifiers == "alt + control" then
-           if key.name == "left" then change_anchor(1, nil)
-           elseif key.name == "right" then change_anchor(2, nil)
-           elseif key.name == "up" then change_anchor(nil, 0)
-           elseif key.name == "down" then change_anchor(nil, 1)
-		   else handled = false end
+          if key.name == "left" then change_anchor(1, nil)
+          elseif key.name == "right" then change_anchor(2, nil)
+          elseif key.name == "up" then change_anchor(nil, 0)
+          elseif key.name == "down" then change_anchor(nil, 1)
+		      else handled = false end
         --elseif key.modifiers == "shift + alt + control" then
         
         end
@@ -4008,7 +4008,7 @@ local function show_window()
           elseif key.name == "left" then left_key()
           elseif key.name == "right" then right_key()
           elseif key.name == "tab" then tab_key()
-		  else handled = false end
+		      else handled = false end
         
         elseif key.modifiers == "shift" then
           if key.name == "tab" then shift_tab_key()
@@ -4028,7 +4028,7 @@ local function show_window()
               true
             )
 			
-		  else handled = false end
+		      else handled = false end
         
         elseif key.modifiers == "alt" then
           if key.name == "up" then 
@@ -4047,12 +4047,12 @@ local function show_window()
               true
             )
 			
-		  else handled = false end
+		      else handled = false end
         
         elseif key.modifiers == "control" then
-          if key.name == "z" then song:undo()
-          elseif key.name == "y" then song:redo()
-          elseif key.name == "up" then 
+          -- if key.name == "z" then song:undo()
+          -- elseif key.name == "y" then song:redo()
+          if key.name == "up" then 
             mod_arrow_key(
               vb.views.time_slider,
               vb.views.time_multiplier_rotary,
@@ -4068,13 +4068,13 @@ local function show_window()
               true
             )
 			
-		  else handled = false end
+		      else handled = false end
         
         --elseif key.modifiers == "shift + alt" then
         
-        elseif key.modifiers == "shift + control" then
-          if key.name == "z" then song:redo()
-		  else handled = false end
+        -- elseif key.modifiers == "shift + control" then
+        --   if key.name == "z" then song:redo()
+		    -- else handled = false end
         
         --elseif key.modifiers == "alt + control" then
         
