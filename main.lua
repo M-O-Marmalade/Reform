@@ -4181,7 +4181,7 @@ end
 --MENU/HOTKEY ENTRIES-------------------------------------------------------------------------------- 
 
 renoise.tool():add_menu_entry {
-  name = "Pattern Editor:Reform:Reform Selection...", 
+  name = "Pattern Editor:Reform:Reform Selected Notes...", 
   invoke = function() reform_main() end
 }
 
@@ -4196,7 +4196,7 @@ renoise.tool():add_menu_entry {
 }
 
 renoise.tool():add_menu_entry {
-  name = "Main Menu:Tools:Reform:Reform Selection...", 
+  name = "Main Menu:Tools:Reform:Reform Selected Notes...", 
   invoke = function() reform_main() end
 }
 
@@ -4211,7 +4211,7 @@ renoise.tool():add_menu_entry {
 }
 
 renoise.tool():add_keybinding {
-  name = "Pattern Editor:Selection:Reform Selection", 
+  name = "Pattern Editor:Selection:Reform Selected Notes", 
   invoke = function(repeated) if not repeated then reform_main() end end
 }
 
