@@ -205,6 +205,7 @@ local tooltips = {
 }
 local control_increments = {0.001, 0.05, 0.01, 0.05, 0.25}
 local last_arrow_key_time = 0
+local first_arrow_key_time = 0
 
 local previous_time = 0
 local idle_processing = false --if apply_reform() takes longer than 40ms, this becomes true
@@ -2675,7 +2676,7 @@ local function shift_tab_key()
 end
 
 --MOD ARROW KEY------------------------------------------
-local function mod_arrow_key(control, alt_control, multiplier, repeated)
+local function mod_arrow_key(control, alt_control, multiplier)
   
   local control_val = control.value
   local control_min_max = {[-1] = control.min, [1] = control.max}
@@ -2688,12 +2689,14 @@ local function mod_arrow_key(control, alt_control, multiplier, repeated)
   local sign = sign(multiplier)
   
   local increment  
-  if not repeated then
-    last_arrow_key_time = os.clock()
+  if os.clock() - last_arrow_key_time > 0.2 then
+    first_arrow_key_time = os.clock()
+    print(os.clock() - last_arrow_key_time)
     increment = control_increments[1]
   else
-    increment = control_increments[2] * math.pow((os.clock() - last_arrow_key_time), 2)
+    increment = control_increments[2] * math.pow((os.clock() - first_arrow_key_time), 2)
   end
+  last_arrow_key_time = os.clock()
   
   if (not alt_control) or (control_val ~= control_min_max[-1] and control_val ~= control_min_max[1]) then
     
@@ -3903,9 +3906,9 @@ local function show_window()
   
     local handled = true
   
-    if key.state == "pressed" then
+    -- if key.state == "pressed" then
       
-      if not key.repeated then
+      -- if not key.repeated then
       
         if key.modifiers == "" then
           if key.name == "esc" then dialog:close()
@@ -3961,7 +3964,7 @@ local function show_window()
           -- if key.name == "z" then song:undo()
           -- elseif key.name == "y" then song:redo()
           if key.name == "space" then space_key()
-          elseif key.name == "up" then 
+          elseif key.name == "up" then
             mod_arrow_key(
               vb.views.time_slider,
               vb.views.time_multiplier_rotary,
@@ -4000,89 +4003,89 @@ local function show_window()
         
         end
       
-      elseif key.repeated then
+      -- elseif key.repeated then
       
-        if key.modifiers == "" then
-          if key.name == "up" then up_key()
-          elseif key.name == "down" then down_key()
-          elseif key.name == "left" then left_key()
-          elseif key.name == "right" then right_key()
-          elseif key.name == "tab" then tab_key()
-          else handled = false end
+      --   if key.modifiers == "" then
+      --     if key.name == "up" then up_key()
+      --     elseif key.name == "down" then down_key()
+      --     elseif key.name == "left" then left_key()
+      --     elseif key.name == "right" then right_key()
+      --     elseif key.name == "tab" then tab_key()
+      --     else handled = false end
         
-        elseif key.modifiers == "shift" then
-          if key.name == "tab" then shift_tab_key()
-          elseif key.name == "up" then 
-            mod_arrow_key(
-              vb.views.offset_slider,
-              vb.views.offset_multiplier_rotary,
-              3.9063,
-              true
-            )
+      --   elseif key.modifiers == "shift" then
+      --     if key.name == "tab" then shift_tab_key()
+      --     elseif key.name == "up" then 
+      --       mod_arrow_key(
+      --         vb.views.offset_slider,
+      --         vb.views.offset_multiplier_rotary,
+      --         3.9063,
+      --         true
+      --       )
           
-          elseif key.name == "down" then 
-            mod_arrow_key(
-              vb.views.offset_slider,
-              vb.views.offset_multiplier_rotary,
-              -3.9063,
-              true
-            )
+      --     elseif key.name == "down" then 
+      --       mod_arrow_key(
+      --         vb.views.offset_slider,
+      --         vb.views.offset_multiplier_rotary,
+      --         -3.9063,
+      --         true
+      --       )
       
-          else handled = false end
+      --     else handled = false end
         
-        elseif key.modifiers == "alt" then
-          if key.name == "up" then 
-            mod_arrow_key(
-              vb.views.curve_slider,
-              nil,
-              1,
-              true
-            )
+      --   elseif key.modifiers == "alt" then
+      --     if key.name == "up" then 
+      --       mod_arrow_key(
+      --         vb.views.curve_slider,
+      --         nil,
+      --         1,
+      --         true
+      --       )
           
-          elseif key.name == "down" then 
-            mod_arrow_key(
-              vb.views.curve_slider,
-              nil,
-              -1,
-              true
-            )
+      --     elseif key.name == "down" then 
+      --       mod_arrow_key(
+      --         vb.views.curve_slider,
+      --         nil,
+      --         -1,
+      --         true
+      --       )
       
-          else handled = false end
+      --     else handled = false end
         
-        elseif key.modifiers == "control" then
-          -- if key.name == "z" then song:undo()
-          -- elseif key.name == "y" then song:redo()
-          if key.name == "up" then 
-            mod_arrow_key(
-              vb.views.time_slider,
-              vb.views.time_multiplier_rotary,
-              1,
-              true
-            )
+      --   elseif key.modifiers == "control" then
+      --     -- if key.name == "z" then song:undo()
+      --     -- elseif key.name == "y" then song:redo()
+      --     if key.name == "up" then 
+      --       mod_arrow_key(
+      --         vb.views.time_slider,
+      --         vb.views.time_multiplier_rotary,
+      --         1,
+      --         true
+      --       )
           
-          elseif key.name == "down" then 
-            mod_arrow_key(
-              vb.views.time_slider,
-              vb.views.time_multiplier_rotary,
-              -1,
-              true
-            )
+      --     elseif key.name == "down" then 
+      --       mod_arrow_key(
+      --         vb.views.time_slider,
+      --         vb.views.time_multiplier_rotary,
+      --         -1,
+      --         true
+      --       )
       
-          else handled = false end
+      --     else handled = false end
         
-        --elseif key.modifiers == "shift + alt" then
+      --   --elseif key.modifiers == "shift + alt" then
         
-        -- elseif key.modifiers == "shift + control" then
-        --   if key.name == "z" then song:redo()
-        -- else handled = false end
+      --   -- elseif key.modifiers == "shift + control" then
+      --   --   if key.name == "z" then song:redo()
+      --   -- else handled = false end
         
-        --elseif key.modifiers == "alt + control" then
+      --   --elseif key.modifiers == "alt + control" then
         
-        --elseif key.modifiers == "shift + alt + control" then
+      --   --elseif key.modifiers == "shift + alt + control" then
         
-        end
+      --   end
       
-      end --end if key.repeated / not key.repeated
+      -- end --end if key.repeated / not key.repeated
       
     --elseif key.state == "released" then
     
@@ -4104,7 +4107,7 @@ local function show_window()
       
       --end
       
-    end --end if key.state == "pressed"/"released"
+    -- end --end if key.state == "pressed"/"released"
   
     if not handled then return key end
   end --end key_handler()
@@ -4120,7 +4123,7 @@ local function show_window()
   
   --create the dialog if it show the dialog window
   if not window_obj or not window_obj.visible then
-    window_obj = app:show_custom_dialog("Reform", window_content, key_handler, key_handler_options)
+    window_obj = app:show_custom_dialog("Reform", window_content, key_handler)
   else window_obj:show() end
   
   return true
