@@ -178,7 +178,7 @@ local function rdclk(num,msg)
 end
 --]]
 
---"GLOBALS"---------------------------------------------------------------------
+--FULL-SCOPE VARIABLES----------------------------------------------------
 local app = renoise.app() 
 local tool = renoise.tool()
 local song = nil
@@ -3916,7 +3916,7 @@ local function show_window()
           elseif key.name == "right" then right_key()
           elseif key.name == "tab" then tab_key()
           else handled = false end
-		  
+      
         elseif key.modifiers == "shift" then
           if key.name == "space" then shift_space_key()
           elseif key.name == "tab" then shift_tab_key()
@@ -3941,20 +3941,20 @@ local function show_window()
               nil,
               1
             )
-			
+      
           elseif key.name == "down" then 
             mod_arrow_key(
               vb.views.curve_slider,
               nil,
               -1
             )
-			
+      
           elseif key.name == "left" then
             alt_left()
-			
+      
           elseif key.name == "right" then
             alt_right()
-			
+      
           else handled = false end
         
         elseif key.modifiers == "control" then
@@ -3974,8 +3974,8 @@ local function show_window()
               vb.views.time_multiplier_rotary,
               -1
             )
-			
-		      else handled = false end
+      
+          else handled = false end
         
         --elseif key.modifiers == "shift + alt" then
         
@@ -3988,14 +3988,14 @@ local function show_window()
           elseif key.name == "down" then change_our_collision_mode(true)
           elseif key.name == "left" then change_wild_collision_mode(false)
           elseif key.name == "right" then change_wild_collision_mode(true)
-		      else handled = false end
+          else handled = false end
         
         elseif key.modifiers == "alt + control" then
           if key.name == "left" then change_anchor(1, nil)
           elseif key.name == "right" then change_anchor(2, nil)
           elseif key.name == "up" then change_anchor(nil, 0)
           elseif key.name == "down" then change_anchor(nil, 1)
-		      else handled = false end
+          else handled = false end
         --elseif key.modifiers == "shift + alt + control" then
         
         end
@@ -4008,7 +4008,7 @@ local function show_window()
           elseif key.name == "left" then left_key()
           elseif key.name == "right" then right_key()
           elseif key.name == "tab" then tab_key()
-		      else handled = false end
+          else handled = false end
         
         elseif key.modifiers == "shift" then
           if key.name == "tab" then shift_tab_key()
@@ -4027,8 +4027,8 @@ local function show_window()
               -3.9063,
               true
             )
-			
-		      else handled = false end
+      
+          else handled = false end
         
         elseif key.modifiers == "alt" then
           if key.name == "up" then 
@@ -4046,8 +4046,8 @@ local function show_window()
               -1,
               true
             )
-			
-		      else handled = false end
+      
+          else handled = false end
         
         elseif key.modifiers == "control" then
           -- if key.name == "z" then song:undo()
@@ -4067,14 +4067,14 @@ local function show_window()
               -1,
               true
             )
-			
-		      else handled = false end
+      
+          else handled = false end
         
         --elseif key.modifiers == "shift + alt" then
         
         -- elseif key.modifiers == "shift + control" then
         --   if key.name == "z" then song:redo()
-		    -- else handled = false end
+        -- else handled = false end
         
         --elseif key.modifiers == "alt + control" then
         
@@ -4105,7 +4105,7 @@ local function show_window()
       --end
       
     end --end if key.state == "pressed"/"released"
-	
+  
     if not handled then return key end
   end --end key_handler()
   
