@@ -5,7 +5,7 @@
   <Version>1.0.0</Version>
   <ApiVersion>6</ApiVersion>
   <Author>MOMarmalade [xephyrpanda@yahoo.com]</Author>
-  <Category>Pattern Editor, Strum, Resize</Category>
+  <Category>Pattern Editor, Strum, Resize, Transform, Selection, Workflow, Composing, Composition</Category>
   <Description>Transform selections of notes quickly and powerfully</Description>
   <Homepage>https://www.aqu.surf/reform</Homepage>
   <Platform/>
