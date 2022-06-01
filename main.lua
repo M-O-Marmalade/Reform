@@ -3958,9 +3958,9 @@ local function show_window()
           else handled = false end
         
         elseif key.modifiers == "control" then
-          -- if key.name == "z" then song:undo()
-          -- elseif key.name == "y" then song:redo()
-          if key.name == "space" then space_key()
+          if key.name == "z" then return
+          elseif key.name == "y" then return
+          elseif key.name == "space" then space_key()
           elseif key.name == "up" then 
             mod_arrow_key(
               vb.views.time_slider,
@@ -3980,8 +3980,8 @@ local function show_window()
         --elseif key.modifiers == "shift + alt" then
         
         elseif key.modifiers == "shift + control" then
-          -- if key.name == "z" then song:redo()
-          if key.name == "o" then toggle_overflow_mode()
+          if key.name == "z" then return
+          elseif key.name == "o" then toggle_overflow_mode()
           elseif key.name == "c" then toggle_condense_mode()
           elseif key.name == "r" then toggle_redistribute_mode()
           elseif key.name == "up" then change_our_collision_mode(false)
@@ -4050,9 +4050,9 @@ local function show_window()
           else handled = false end
         
         elseif key.modifiers == "control" then
-          -- if key.name == "z" then song:undo()
-          -- elseif key.name == "y" then song:redo()
-          if key.name == "up" then 
+          if key.name == "z" then return
+          elseif key.name == "y" then return
+          elseif key.name == "up" then 
             mod_arrow_key(
               vb.views.time_slider,
               vb.views.time_multiplier_rotary,
@@ -4070,11 +4070,11 @@ local function show_window()
       
           else handled = false end
         
-        --elseif key.modifiers == "shift + alt" then
+        -- elseif key.modifiers == "shift + alt" then
         
-        -- elseif key.modifiers == "shift + control" then
-        --   if key.name == "z" then song:redo()
-        -- else handled = false end
+        elseif key.modifiers == "shift + control" then
+          if key.name == "z" then return
+        else handled = false end
         
         --elseif key.modifiers == "alt + control" then
         
