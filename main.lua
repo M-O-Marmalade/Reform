@@ -4191,7 +4191,7 @@ renoise.tool():add_menu_entry {
 }
 
 renoise.tool():add_menu_entry {
-  name = "Pattern Editor:Reform:Strumify Line at Edit Cursor", 
+  name = "Pattern Editor:Reform:Strumify Line at Edit Cursor...", 
   invoke = function() strumify_line_at_edit_cursor() end
 }
 
@@ -4206,12 +4206,12 @@ renoise.tool():add_menu_entry {
 }
 
 renoise.tool():add_menu_entry {
-  name = "Main Menu:Tools:Reform:Strumify Line at Edit Cursor", 
+  name = "Main Menu:Tools:Reform:Strumify Line at Edit Cursor...", 
   invoke = function() strumify_line_at_edit_cursor() end
 }
 
 renoise.tool():add_keybinding {
-  name = "Pattern Editor:Selection:Reform Selected Notes", 
+  name = "Pattern Editor:Selection:Reform Selected Notes...", 
   invoke = function(repeated) if not repeated then reform_main() end end
 }
 
@@ -4221,6 +4221,6 @@ renoise.tool():add_keybinding {
 }
 
 renoise.tool():add_keybinding {
-  name = "Pattern Editor:Selection:Strumify Line at Edit Cursor", 
+  name = "Pattern Editor:Selection:Strumify Line at Edit Cursor...", 
   invoke = function(repeated) if not repeated then strumify_line_at_edit_cursor() end end
 }
