@@ -2,7 +2,7 @@
 <RenoiseScriptingTool doc_version="0">
   <Name>Reform</Name>
   <Id>mom.MOMarmalade.Reform</Id>
-  <Version>1.0.0</Version>
+  <Version>1.1</Version>
   <ApiVersion>5</ApiVersion>
   <Author>MOMarmalade [xephyrpanda@yahoo.com]</Author>
   <Category>Pattern Editor, Strum, Resize, Transform, Selection, Workflow, Composing, Composition</Category>
