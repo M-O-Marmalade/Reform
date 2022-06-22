@@ -2252,7 +2252,7 @@ local function detect_changes_to_our_note(note)
       local fx = column.effect_amount_value
       if fx ~= note.effect_amount_value then
         flags.fx_changed = true
-        note.effect_amount_value = vol
+        note.effect_amount_value = fx
       else
         flags.fx_changed = false
       end
@@ -3782,7 +3782,7 @@ local function show_window()
               mode = "button_color",
               notifier = function()
                 detect_changes_to_notes()
-                if flags.vol_changed then calculate_pan_placements() end
+                if flags.fx_changed then calculate_fx_placements() end
                 flags.fx = not flags.fx
                 vb.views.fx_column.visible = flags.fx
                 update_all_controls()
