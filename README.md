@@ -1,4 +1,6 @@
-# Reform [![Website]][lt_website]
+# Reform
+
+[![Website]][lt_website]
 
 A [Renoise](https://www.renoise.com/products/renoise) tool to transform selections of notes quickly and powerfully.
 
