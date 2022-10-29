@@ -2,7 +2,7 @@
 
 [![Website]][lt_website]
 
-A [Renoise](https://www.renoise.com/products/renoise) tool that takes the burden of transforming selections of multiple groups of notes off the user's shoulders.
+A [Renoise](https://www.renoise.com/products/renoise) tool that takes the burden of transforming selections of multiple notes off the user's shoulders.
 
 <!---------------->
 
