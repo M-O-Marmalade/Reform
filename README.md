@@ -2,7 +2,7 @@
 
 [![Website]][lt_website]
 
-A [Renoise](https://www.renoise.com/products/renoise) tool to transform selections of notes quickly and powerfully.
+A [Renoise](https://www.renoise.com/products/renoise) tool that takes the burden of transforming selections of multiple groups of notes off the user's shoulders.
 
 <!---------------->
 
