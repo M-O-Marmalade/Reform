@@ -166,7 +166,7 @@ local function stclk(num)
 end
 
 local function adclk(num)
-  if debugvars.print_clocks then    
+  if debugvars.print_clocks then
     debugvars.clocktotals[num] = debugvars.clocktotals[num] + (os.clock() - debugvars.tempclocks[num])
   end
 end
@@ -174,16 +174,16 @@ end
 local function rdclk(num,msg)
   if debugvars.print_clocks then
     print(msg .. debugvars.clocktotals[num] or "nil")
-  end 
+  end
 end
 --]]
 
 --FULL-SCOPE VARIABLES----------------------------------------------------
-local app = renoise.app() 
+local app = renoise.app()
 local tool = renoise.tool()
 local song = nil
 
-local vb = renoise.ViewBuilder() 
+local vb = renoise.ViewBuilder()
 local window_obj = nil
 local window_content = nil
 local vb_notifiers_on
@@ -212,30 +212,30 @@ local idle_processing = false --if apply_reform() takes longer than 40ms, this b
 local selected_notes = {} --contains all of our notes to be processed
 --[[
   the selected_notes "struct" consists of...
-  
+
   [1,2 .. n]{
-    
+
     --the index where the note originated from
     original_index = {s,p,t,c,l}
-    
+
     --original values stored from the note
     note_value
     instrument_value
-    volume_value 
+    volume_value
     panning_value
     delay_value
     effect_number_value
     effect_amount_value
-    
+
     rel_line_pos --the line difference between current_location and original_index
-    
+
     current_location = {s,p,t,c,l}  --the new/current index of the note after processing
-    
+
     --precomputed placement values to use for different types of operations
-    placement    
-    redistributed_placement_in_note_range    
+    placement
+    redistributed_placement_in_note_range
     redistributed_placement_in_sel_range
-    
+
     --values stored from last spot this note overwrote
     last_overwritten_values = {
       note_value
@@ -246,16 +246,16 @@ local selected_notes = {} --contains all of our notes to be processed
       effect_number_value
       effect_amount_value
     }
-    
-    flags = {      
+
+    flags = {
       write --tells whether this note should overwrite whatever is at the same index as it is
       vol_re --tells whether the volume was distributed or not previously
       pan_re --tells whether the panning was distributed or not previously
       fx_re --tells whether the fx amount was distributed or not previously
       clear --tells whether this note should clear the index it is at when it leaves
-      restore --tells whether this note should restore anything next time restoration occurs          
+      restore --tells whether this note should restore anything next time restoration occurs
     }
-    
+
   }
 --]]
 
@@ -284,27 +284,27 @@ local flags = {
   vol_changed = false,
   pan_changed = false,
   fx_changed = false,
-  
+
   vol = false,
   vol_re = false,
   vol_orig_min = 0,
   vol_orig_max = 128,
   vol_min = 0,
   vol_max = 128,
-  
+
   pan = false,
   pan_re = false,
   pan_orig_min = 0,
   pan_orig_max = 128,
   pan_min = 0,
   pan_max = 128,
-  
+
   fx = false,
   fx_re = false,
   fx_orig_min = 0,
   fx_orig_max = 255,
   fx_min = 0,
-  fx_max = 255,  
+  fx_max = 255,
 }
 
 local pattern_lengths = {} --[pattern_index]{length, valid, notifier}
@@ -321,7 +321,7 @@ local typed_time = 1
 local curve_intensity = {0, 0, 0, 0}  --time,vol,pan,fx
 local curve_type = {1, 1, 1, 1}
 local curve_points = {
-  
+
   { --time
     sampled = {},
     default = {
@@ -339,7 +339,7 @@ local curve_points = {
       samplesize = 18
     }
   },
-  
+
   { --vol
     sampled = {},
     default = {
@@ -352,7 +352,7 @@ local curve_points = {
       samplesize = 10
     }
   },
-  
+
   { --pan
     sampled = {},
     default = {
@@ -365,7 +365,7 @@ local curve_points = {
       samplesize = 10
     }
   },
-  
+
     { --fx
     sampled = {},
     default = {
@@ -378,7 +378,7 @@ local curve_points = {
       samplesize = 10
     }
   },
-  
+
 }
 local pascals_triangle = {}
 local curve_displays = {
@@ -400,66 +400,66 @@ local anchor_type = 1 -- 1 = note, 2 = selection
 
 --RESET VARIABLES------------------------------
 local function reset_variables()
-  
+
   --get our song reference if we don't have it yet
   if not song then song = renoise.song() end
-  
+
   originally_visible_columns = {{},{},{},{},{}}
   table.clear(columns_overflowed_into)
-  table.clear(is_note_track) 
+  table.clear(is_note_track)
   table.clear(selected_notes)
   table.clear(placed_notes)
-  
+
   start_pos = renoise.SongPos()
-  
+
   flags = {
     overflow = true,
     condense = false,
     redistribute = false,
     our_notes = false,  --true == keep later notes, false == keep earlier notes
     wild_notes = true,  --true == keep selected notes, false == keep wild notes
-    
+
     vol = false,
     vol_re = false,
     vol_orig_min = 0,
     vol_orig_max = 128,
     vol_min = 0,
     vol_max = 128,
-    
+
     pan = false,
     pan_re = false,
     pan_orig_min = 0,
     pan_orig_max = 128,
     pan_min = 0,
     pan_max = 128,
-    
+
     fx = false,
     fx_re = false,
     fx_orig_min = 0,
     fx_orig_max = 255,
     fx_min = 0,
-    fx_max = 255,  
+    fx_max = 255,
   }
-  
+
   time = 0
   time_multiplier = 1
   time_was_typed = false
   typed_time = 1
-  
+
   curve_intensity = {0, 0, 0, 0}  --time,vol,pan,fx
   curve_type = {1, 1, 1, 1}
-  
+
   offset = 0
   offset_multiplier = 1
   offset_was_typed = false
   typed_offset = 0
-  
+
   anchor = 0
   anchor_type = 1
-  
+
   earliest_placement = math.huge
   latest_placement = 0
-  
+
   return true
 end
 
@@ -472,22 +472,22 @@ local function get_theme_data()
   local themefile = io.open("Theme.xrnc")
   local themestring = themefile:read("*a")
   themefile:close()
-  
+
   --find the indices where the Selected_Button_Back property begins and ends
   local i = {}
   i[1], i[2] = themestring:find("<Selected_Button_Back>",0,true)
   i[3], i[4] = themestring:find("</Selected_Button_Back>",0,true)
-  
+
   local stringtemp = themestring:sub(i[2]+1,i[3]-1)
-  
+
   i[1], i[2] = stringtemp:find(",",0,true)
-  
+
   theme.selected_button_back[1] = tonumber(stringtemp:sub(0,i[1]-1))
-  
+
   i[2], i[3] = stringtemp:find(",",i[2]+1,true)
-  
+
   theme.selected_button_back[2] = tonumber(stringtemp:sub(i[1]+1,i[2]-1))
-  
+
   theme.selected_button_back[3] = tonumber(stringtemp:sub(i[2]+1,stringtemp:len()))
 
   return true
@@ -495,7 +495,7 @@ end
 
 --SET THEME COLORS-----------------------------------------
 local function set_theme_colors()
-  
+
   vb.views.overflow_button.color = flags.overflow and theme.selected_button_back or {0,0,0}
   vb.views.condense_button.color = flags.condense and theme.selected_button_back or {0,0,0}
   vb.views.redistribute_button.color = flags.redistribute and theme.selected_button_back or {0,0,0}
@@ -510,27 +510,27 @@ end
 
 --UPDATE VALUEFIELDS---------------------------------
 local function update_valuefields()
-  
+
   vb_notifiers_on = false
-  
+
   if time_was_typed then
     vb.views.time_text.value = typed_time
   else
     vb.views.time_text.value = time * time_multiplier + 1
   end
-  
+
   if offset_was_typed then
     vb.views.offset_text.value = typed_offset
   else
     vb.views.offset_text.value = offset * offset_multiplier
   end
-  
+
   --if debugvars.extra_curve_controls then vb.views.samplesize_text.value = curve_points[1][curve_type[1]].samplesize end
-  
+
   vb_notifiers_on = true
-  
+
   --print("update_valuefields() end")
-  
+
   return true
 end
 
@@ -539,7 +539,7 @@ local function update_anchor_bitmaps()
 
   --anchor  -- 0 = top, 1 = bottom
   --anchor_type -- 1 = note, 2 = selection
-  
+
   if anchor == 0 then
     if anchor_type == 1 then
       vb.views.anchorTL.bitmap = "Bitmaps/anchorTL2.bmp"
@@ -557,7 +557,7 @@ local function update_anchor_bitmaps()
       vb.views.anchorTL.bitmap = "Bitmaps/anchorTL1.bmp"
       vb.views.anchorTR.bitmap = "Bitmaps/anchorTR1.bmp"
       vb.views.anchorBL.bitmap = "Bitmaps/anchorBL2.bmp"
-      vb.views.anchorBR.bitmap = "Bitmaps/anchorBR1.bmp"    
+      vb.views.anchorBR.bitmap = "Bitmaps/anchorBR1.bmp"
     elseif anchor_type == 2 then
       vb.views.anchorTL.bitmap = "Bitmaps/anchorTL1.bmp"
       vb.views.anchorTR.bitmap = "Bitmaps/anchorTR1.bmp"
@@ -573,7 +573,7 @@ end
 local function update_collision_bitmaps()
 
   local our_collisions,wild_collisions = false,false
-  
+
   for k,v in pairs(note_collisions.ours) do
     if v then our_collisions = true end
   end
@@ -581,7 +581,7 @@ local function update_collision_bitmaps()
   for k,v in pairs(note_collisions.wild) do
     if v then wild_collisions = true end
   end
-  
+
   if our_collisions then
     vb.views.collision_sel_bmp.tooltip = tooltips.collision_sel[2] .. tooltips.collision_sel[3]
     vb.views.collision_sel_bmp.active = true
@@ -595,7 +595,7 @@ local function update_collision_bitmaps()
     vb.views.collision_sel_bmp.bitmap = "Bitmaps/collision_sel_0.bmp"
     vb.views.collision_sel_bmp.mode = "main_color"
   end
-  
+
   if wild_collisions then
     vb.views.collision_wild_bmp.tooltip = tooltips.collision_wild[2] .. tooltips.collision_wild[3]
     vb.views.collision_wild_bmp.active = true
@@ -610,7 +610,7 @@ local function update_collision_bitmaps()
     vb.views.collision_wild_bmp.mode = "main_color"
   end
 
-end 
+end
 
 --UPDATE CURVE TYPE BITMAPS------------------------
 -- local function update_curve_type_bitmaps()
@@ -628,26 +628,26 @@ end
 --UPDATE VOL PAN FX BITMAPS--------------------------
 local function update_vol_pan_fx_bitmaps()
 
-  if flags.vol then 
+  if flags.vol then
     vb.views.volbutton.bitmap = "Bitmaps/volbuttonpressed.bmp"
     vb.views.vol_column.visible = true
-  else 
+  else
     vb.views.volbutton.bitmap = "Bitmaps/volbutton.bmp"
     vb.views.vol_column.visible = false
   end
-  
-  if flags.pan then 
+
+  if flags.pan then
     vb.views.panbutton.bitmap = "Bitmaps/panbuttonpressed.bmp"
     vb.views.pan_column.visible = true
-  else 
+  else
     vb.views.panbutton.bitmap = "Bitmaps/panbutton.bmp"
     vb.views.pan_column.visible = false
   end
-  
-  if flags.fx then 
+
+  if flags.fx then
     vb.views.fxbutton.bitmap = "Bitmaps/fxbuttonpressed.bmp"
     vb.views.fx_column.visible = true
-  else 
+  else
     vb.views.fxbutton.bitmap = "Bitmaps/fxbutton.bmp"
     vb.views.fx_column.visible = false
   end
@@ -658,8 +658,8 @@ end
 local function reset_view()
 
   vb_notifiers_on = false
-  
-  vb.views.time_text.value = 1 
+
+  vb.views.time_text.value = 1
   vb.views.time_slider.value = 0
   vb.views.time_multiplier_rotary.value = 1
   vb.views.curve_text.value = 0
@@ -669,34 +669,34 @@ local function reset_view()
   vb.views.offset_text.value = 0
   vb.views.offset_slider.value = 0
   vb.views.offset_multiplier_rotary.value = 1
-  
+
   vb.views.vol_min_box.value = flags.vol_orig_min
   vb.views.vol_slider.value = 0
   vb.views.vol_max_box.value = flags.vol_orig_max
-  
+
   vb.views.pan_min_box.value = flags.pan_orig_min
   vb.views.pan_slider.value = 0
   vb.views.pan_max_box.value = flags.pan_orig_max
-  
+
   vb.views.fx_min_box.value = flags.fx_orig_min
   vb.views.fx_slider.value = 0
   vb.views.fx_max_box.value = flags.fx_orig_max
-  
+
   vb.views.collision_sel_bmp.bitmap = "Bitmaps/collision_sel_0.bmp"
   vb.views.collision_wild_bmp.bitmap = "Bitmaps/collision_wild_0.bmp"
-  
+
   vb.views.vol_column.visible = false
   vb.views.volbutton.bitmap = "Bitmaps/volbutton.bmp"
-  
+
   vb.views.pan_column.visible = false
   vb.views.panbutton.bitmap = "Bitmaps/panbutton.bmp"
-  
+
   vb.views.fx_column.visible = false
   vb.views.fxbutton.bitmap = "Bitmaps/fxbutton.bmp"
-  
+
   set_theme_colors()
   update_anchor_bitmaps()
-  
+
   vb_notifiers_on = true
 
   return true
@@ -704,8 +704,8 @@ end
 
 --DEACTIVATE CONTROLS-------------------------------------
 local function deactivate_controls()
-  
-  if window_obj then    
+
+  if window_obj then
     vb.views.time_text.active = false
     vb.views.time_slider.active = false
     vb.views.time_multiplier_rotary.active = false
@@ -716,37 +716,37 @@ local function deactivate_controls()
     vb.views.offset_text.active = false
     vb.views.offset_slider.active = false
     vb.views.offset_multiplier_rotary.active = false
-    
+
     vb.views.vol_max_box.active = false
     vb.views.vol_slider.active = false
     vb.views.vol_min_box.active = false
     vb.views.vol_re_button.active = false
-    
+
     vb.views.pan_max_box.active = false
     vb.views.pan_slider.active = false
     vb.views.pan_min_box.active = false
     vb.views.pan_re_button.active = false
-    
+
     vb.views.fx_max_box.active = false
     vb.views.fx_slider.active = false
     vb.views.fx_min_box.active = false
     vb.views.fx_re_button.active = false
-    
+
     vb.views.overflow_button.active = false
     vb.views.condense_button.active = false
     vb.views.redistribute_button.active = false
-    
+
     vb.views.collision_sel_bmp.active = false
     vb.views.collision_wild_bmp.active = false
-    
+
     vb.views.anchorTL.active = false
     vb.views.anchorTR.active = false
     vb.views.anchorBL.active = false
     vb.views.anchorBR.active = false
-    
+
     vb.views.volbutton.active = false
     vb.views.panbutton.active = false
-    vb.views.fxbutton.active = false    
+    vb.views.fxbutton.active = false
   end
 
   return true
@@ -754,7 +754,7 @@ end
 
 --ACTIVATE CONTROLS-------------------------------------
 local function activate_controls()
-  
+
   if window_obj then
     vb.views.time_text.active = true
     vb.views.time_slider.active = true
@@ -766,34 +766,34 @@ local function activate_controls()
     vb.views.offset_text.active = true
     vb.views.offset_slider.active = true
     vb.views.offset_multiplier_rotary.active = true
-    
+
     vb.views.vol_max_box.active = true
     vb.views.vol_slider.active = true
     vb.views.vol_min_box.active = true
     vb.views.vol_re_button.active = true
-    
+
     vb.views.pan_max_box.active = true
     vb.views.pan_slider.active = true
     vb.views.pan_min_box.active = true
     vb.views.pan_re_button.active = true
-    
+
     vb.views.fx_max_box.active = true
     vb.views.fx_slider.active = true
     vb.views.fx_min_box.active = true
     vb.views.fx_re_button.active = true
-    
+
     vb.views.overflow_button.active = true
     vb.views.condense_button.active = true
     vb.views.redistribute_button.active = true
-    
+
     vb.views.collision_sel_bmp.active = true
     vb.views.collision_wild_bmp.active = true
-    
+
     vb.views.anchorTL.active = true
     vb.views.anchorTR.active = true
     vb.views.anchorBL.active = true
     vb.views.anchorBR.active = true
-    
+
     vb.views.volbutton.active = true
     vb.views.panbutton.active = true
     vb.views.fxbutton.active = true
@@ -801,50 +801,50 @@ local function activate_controls()
 
   return true
 end
-  
+
 --RELEASE DOCUMENT------------------------------------------
 local function release_document()
 
   --if debugvars.print_notifier_trigger then print("release document notifier triggered!") end
-  
+
   --invalidate selection
   valid_selection = false
-  
+
   deactivate_controls()
-  
+
   --invalidate recorded sequence length
   seq_length.valid = false
-  
+
   --invalidate all recorded pattern lengths
   for k, v in pairs(pattern_lengths) do
     v.valid = false
   end
-  
+
   --invalidate all recorded visible note columns for tracks
   for k, v in pairs(visible_note_columns) do
     v.valid = false
   end
-  
+
   --invalidate all recorded visible effect columns for tracks
   for k, v in pairs(visible_effect_columns) do
     v.valid = false
-  end  
-  
+  end
+
   --invalidate recorded total track count
   track_count.valid = false
-  
-end  
-  
+
+end
+
 --NEW DOCUMENT------------------------------------------
 local function new_document()
 
   --if debugvars.print_notifier_trigger then print("new document notifier triggered!") end
 
   song = renoise.song()
-  
+
   reset_variables()
   reset_view()
-  
+
 end
 
 --ADD DOCUMENT NOTIFIERS------------------------------------------------
@@ -853,16 +853,16 @@ local function add_document_notifiers()
   --add document release notifier if it doesn't exist yet
   if not tool.app_release_document_observable:has_notifier(release_document) then
     tool.app_release_document_observable:add_notifier(release_document)
-    
-    --if debugvars.print_notifier_attach then print("release document notifier attached!") end    
+
+    --if debugvars.print_notifier_attach then print("release document notifier attached!") end
   end
 
   --add new document notifier if it doesn't exist yet
   if not tool.app_new_document_observable:has_notifier(new_document) then
     tool.app_new_document_observable:add_notifier(new_document)
-    
-    --if debugvars.print_notifier_attach then print("new document notifier attached!") end    
-  end  
+
+    --if debugvars.print_notifier_attach then print("new document notifier attached!") end
+  end
 
   return true
 end
@@ -872,23 +872,23 @@ local function add_pattern_length_notifier(p)
 
   --define the notifier function
   local function pattern_length_notifier()
-    
+
     --if debugvars.print_notifier_trigger then
       --print(("pattern %i's length notifier triggered!!"):format(p))
     --end
-    
+
     pattern_lengths[p].valid = false
-    
+
     --remove it from our record of which pattern length notifiers we currently have attached
     pattern_lengths[p].notifier = false
-  
+
     song.patterns[p].number_of_lines_observable:remove_notifier(pattern_length_notifier)
-    
+
   end
-  
+
   --then add it to the pattern in question
   song.patterns[p].number_of_lines_observable:add_notifier(pattern_length_notifier)
-  
+
   --add it to our record of which pattern length notifiers we currently have attached
   pattern_lengths[p].notifier = true
 
@@ -896,40 +896,40 @@ end
 
 --GET PATTERN LENGTH AT SEQ-----------------------------------------
 local function get_pattern_length_at_seq(s)
-  
+
   --convert the sequence index to a pattern index
   local p = song.sequencer:pattern(s)
-  
+
   --create an entry for this pattern if there is none yet
-  if not pattern_lengths[p] then  
+  if not pattern_lengths[p] then
     pattern_lengths[p] = {}
   end
-  
+
   --update our records of this pattern's length if we don't have the valid data for it
   if not pattern_lengths[p].valid then
     pattern_lengths[p].length = song.patterns[p].number_of_lines
-    pattern_lengths[p].valid = true  
-    
+    pattern_lengths[p].valid = true
+
     --add our notifier to invalidate our recorded pattern length if this pattern's length changes
     add_pattern_length_notifier(p)
-    
+
     --if debugvars.print_notifier_attach then
       --print(("pattern %i's length notifier attached!!"):format(p))
     --end
   end
-  
-  return pattern_lengths[s].length
+
+  return pattern_lengths[p].length
 end
 
 --SEQUENCE COUNT NOTIFIER---------------------------------------------------
 local function sequence_count_notifier()
-  
+
   --if debugvars.print_notifier_trigger then print("sequence count notifier triggered!!") end
-  
+
   seq_length.valid = false
-  
+
   song.sequencer.pattern_sequence_observable:remove_notifier(sequence_count_notifier)
-  
+
 end
 
 --GET SEQUENCE LENGTH-------------------------------------
@@ -938,25 +938,25 @@ local function get_sequence_length()
   if not seq_length.valid then
     seq_length.length = #song.sequencer.pattern_sequence
     seq_length.valid = true
-    
+
     --add our notifier to invalidate our recorded seq length if the sequence length changes
     song.sequencer.pattern_sequence_observable:add_notifier(sequence_count_notifier)
-    
+
     --if debugvars.print_notifier_attach then print("sequence count notifier attached!!") end
   end
-  
+
   return seq_length.length
 end
 
 --TRACK COUNT NOTIFIER---------------------------------------------------
 local function track_count_notifier()
-  
+
   --if debugvars.print_notifier_trigger then print("track count notifier triggered!!") end
-  
+
   track_count.valid = false
-  
+
   song.tracks_observable:remove_notifier(track_count_notifier)
-  
+
 end
 
 --GET TRACK COUNT-------------------------------------
@@ -965,13 +965,13 @@ local function get_track_count()
   if not track_count.valid then
     track_count.count = #song.tracks
     track_count.valid = true
-    
+
     --add our notifier to invalidate our recorded track count if the amount of tracks changes
     song.tracks_observable:add_notifier(track_count_notifier)
-    
+
     --if debugvars.print_notifier_attach then print("track count notifier attached!!") end
   end
-  
+
   return track_count.count
 end
 
@@ -980,23 +980,23 @@ local function add_visible_note_columns_notifier(t)
 
   --define the notifier function
   local function visible_note_columns_notifier()
-    
+
     --if debugvars.print_notifier_trigger then
       --print(("track %i's visible note columns notifier triggered!!"):format(t))
     --end
-    
+
     visible_note_columns[t].valid = false
-    
+
     --remove it from our record of which notifiers we currently have attached
     visible_note_columns[t].notifier = false
-  
+
     song:track(t).visible_note_columns_observable:remove_notifier(visible_note_columns_notifier)
-    
+
   end
-  
+
   --then add it to the track in question
   song:track(t).visible_note_columns_observable:add_notifier(visible_note_columns_notifier)
-  
+
   --add it to our record of which notifiers we currently have attached
   visible_note_columns[t].notifier = true
 
@@ -1004,25 +1004,25 @@ end
 
 --GET VISIBLE NOTE COLUMNS-----------------------------------------
 local function get_visible_note_columns(t)
-  
+
   --create an entry for this pattern if there is none yet
-  if not visible_note_columns[t] then  
+  if not visible_note_columns[t] then
     visible_note_columns[t] = {}
   end
-  
+
   --update our records of this pattern's length if we don't have the valid data for it
   if not visible_note_columns[t].valid then
     visible_note_columns[t].amount = song:track(t).visible_note_columns
-    visible_note_columns[t].valid = true  
-    
+    visible_note_columns[t].valid = true
+
     --add our notifier to invalidate our record if anything changes
     add_visible_note_columns_notifier(t)
-    
+
     --if debugvars.print_notifier_attach then
       --print(("track %i's visible note columns notifier attached!!"):format(t))
     --end
   end
-  
+
   return visible_note_columns[t].amount
 end
 
@@ -1031,23 +1031,23 @@ local function add_visible_effect_columns_notifier(t)
 
   --define the notifier function
   local function visible_effect_columns_notifier()
-    
+
     --if debugvars.print_notifier_trigger then
       --print(("track %i's visible effect columns notifier triggered!!"):format(t))
     --end
-    
+
     visible_effect_columns[t].valid = false
-    
+
     --remove it from our record of which notifiers we currently have attached
     visible_effect_columns[t].notifier = false
-  
+
     song:track(t).visible_effect_columns_observable:remove_notifier(visible_effect_columns_notifier)
-    
+
   end
-  
+
   --then add it to the track in question
   song:track(t).visible_effect_columns_observable:add_notifier(visible_effect_columns_notifier)
-  
+
   --add it to our record of which notifiers we currently have attached
   visible_effect_columns[t].notifier = true
 
@@ -1055,31 +1055,31 @@ end
 
 --GET VISIBLE EFFECT COLUMNS-----------------------------------------
 local function get_visible_effect_columns(t)
-  
+
   --create an entry for this pattern if there is none yet
-  if not visible_effect_columns[t] then  
+  if not visible_effect_columns[t] then
     visible_effect_columns[t] = {}
   end
-  
+
   --update our records of this pattern's length if we don't have the valid data for it
   if not visible_effect_columns[t].valid then
     visible_effect_columns[t].amount = song:track(t).visible_effect_columns
-    visible_effect_columns[t].valid = true  
-    
+    visible_effect_columns[t].valid = true
+
     --add our notifier to invalidate our record if anything changes
     add_visible_effect_columns_notifier(t)
-    
+
     --if debugvars.print_notifier_attach then
       --print(("track %i's visible effect columns notifier attached!!"):format(t))
     --end
   end
-  
+
   return visible_effect_columns[t].amount
 end
 
 --REMAP RANGE-------------------------------------------------------
 local function remap_range(val,lo1,hi1,lo2,hi2)
-  
+
   if lo1 == hi1 then return lo2 end
   return lo2 + (hi2 - lo2) * ((val - lo1) / (hi1 - lo1))
 end
@@ -1087,19 +1087,19 @@ end
 --SIGN------------------------------------
 local function sign(number)
 
-  return number > 0 and 1 or (number == 0 and 0 or -1)  
+  return number > 0 and 1 or (number == 0 and 0 or -1)
 end
 
 --STORE NOTE--------------------------------------------
 local function store_note(s,p,t,c,l,counter)
-  
+
   local column = song:pattern(p):track(t):line(l):note_column(c)
-  
+
   if not column.is_empty then
-    
+
     --create a table to store our note info
     selected_notes[counter] = {}
-    
+
     --record the original index where the note came from
     selected_notes[counter].original_index = {
       s = s,
@@ -1108,16 +1108,16 @@ local function store_note(s,p,t,c,l,counter)
       c = c,
       l = l
     }
-    
+
     --store all of the values for this note column (note,instr,vol,pan,dly,fx)
     selected_notes[counter].note_value = column.note_value
     selected_notes[counter].instrument_value = column.instrument_value
-    selected_notes[counter].volume_value = column.volume_value 
-    selected_notes[counter].panning_value = column.panning_value 
-    selected_notes[counter].delay_value = column.delay_value 
-    selected_notes[counter].effect_number_value = column.effect_number_value 
+    selected_notes[counter].volume_value = column.volume_value
+    selected_notes[counter].panning_value = column.panning_value
+    selected_notes[counter].delay_value = column.delay_value
+    selected_notes[counter].effect_number_value = column.effect_number_value
     selected_notes[counter].effect_amount_value = column.effect_amount_value
-    
+
     --initialize the location of the note
     selected_notes[counter].current_location = {
       s = s,
@@ -1126,18 +1126,18 @@ local function store_note(s,p,t,c,l,counter)
       c = c,
       l = l
     }
-    
+
     --initialize our relative line position
     selected_notes[counter].rel_line_pos = l
 
     --initalize our flags so that the note will leave an empty space behind when it moves
     selected_notes[counter].flags = {write = true, clear = true, restore = false, vol_re=false, pan_re=false, fx_re=false}
-    
+
     --increment our index counter by one, as we have just finished storing one new note in our table
     counter = counter + 1
-  
+
   end
-  
+
   return counter
 end
 
@@ -1148,7 +1148,7 @@ local function get_selection()
   selected_seq = song.selected_sequence_index
   selected_pattern = song.sequencer:pattern(selected_seq)
   selection = song.selection_in_pattern
-  
+
   --if there is no selection box, then we show an error, and disallow further operations
   if not selection then
     app:show_error("No selection has been made")
@@ -1162,10 +1162,10 @@ end
 
 --SELECT LINE AT EDIT CURSOR-----------------------------------------
 local function select_line_at_edit_cursor()
-  
+
   local line = song.selected_line_index
   local track = song.selected_track_index
-  
+
   song.selection_in_pattern = {
     start_line = line,
     end_line = line,
@@ -1179,29 +1179,29 @@ end
 
 --FIND NOTES IN SELECTION---------------------------------------------
 local function find_selected_notes()
-  
+
   --determine which note columns are visible
-  for t = selection.start_track, selection.end_track do  
+  for t = selection.start_track, selection.end_track do
     originally_visible_columns[1][t] = song:track(t).visible_note_columns
     originally_visible_columns[2][t] = song:track(t).volume_column_visible
     originally_visible_columns[3][t] = song:track(t).panning_column_visible
     originally_visible_columns[4][t] = song:track(t).delay_column_visible
     originally_visible_columns[5][t] = song:track(t).sample_effects_column_visible
   end
-    
+
   --find out what column to end on when working in the first track, based on how many tracks are selected total
   if selection.end_track - selection.start_track == 0 then
     column_to_end_on_in_first_track = math.min(selection.end_column, originally_visible_columns[1][selection.start_track])
   else
     column_to_end_on_in_first_track = originally_visible_columns[1][selection.start_track]
   end
-  
+
   local counter = 1
   table.clear(is_note_track)
-  
+
   --scan through lines, tracks, and columns and store all notes to be reformed
-  for l = selection.start_line, selection.end_line do 
-     
+  for l = selection.start_line, selection.end_line do
+
     --work on first track
     if song:track(selection.start_track).type == 1 then
       is_note_track[selection.start_track] = true
@@ -1209,19 +1209,19 @@ local function find_selected_notes()
         counter = store_note(selected_seq,selected_pattern,selection.start_track,c,l,counter)
       end
     end
-      
+
     --work on middle track(s)
     if selection.end_track - selection.start_track > 1 then
       for t = selection.start_track + 1, selection.end_track - 1 do
         if song:track(t).type == 1 then
           is_note_track[t] = true
-          for c = 1, originally_visible_columns[1][t] do        
-            counter = store_note(selected_seq,selected_pattern,t,c,l,counter)  
-          end 
+          for c = 1, originally_visible_columns[1][t] do
+            counter = store_note(selected_seq,selected_pattern,t,c,l,counter)
+          end
         end
       end
     end
-      
+
     --work on last track--
     if selection.end_track - selection.start_track > 0 then
       if song:track(selection.end_track).type == 1  then
@@ -1231,9 +1231,9 @@ local function find_selected_notes()
         end
       end
     end
-    
+
   end
-  
+
   --if no content was found in the selection, then we should not continue operations
   if counter == 1 then
     valid_selection = false
@@ -1241,10 +1241,10 @@ local function find_selected_notes()
     app:show_error("The selection is empty!")
     return false
   end
-  
+
   --if there was content in the selection, we will set valid_selection to true, and continue
   valid_selection = true
-    
+
   return true
 end
 
@@ -1252,10 +1252,10 @@ end
 local function calculate_vol_placements()
 
   --find the least and greatest volume values in selection
-  local least_vol,greatest_vol = 128,0  
+  local least_vol,greatest_vol = 128,0
   for k,note in ipairs(selected_notes) do
     if note.volume_value > greatest_vol and note.volume_value <= 255 then
-      greatest_vol = note.volume_value 
+      greatest_vol = note.volume_value
     end
     if note.volume_value < least_vol and note.volume_value <= 255 then
       least_vol = note.volume_value
@@ -1274,12 +1274,12 @@ end
 local function calculate_pan_placements()
 
   --find the least and greatest panning values in selection
-  local least_pan,greatest_pan = 128,0  
-  for k,note in ipairs(selected_notes) do    
+  local least_pan,greatest_pan = 128,0
+  for k,note in ipairs(selected_notes) do
     local pan_val = note.panning_value
-    
+
     if pan_val == 255 then pan_val = 64 end
-    
+
     if pan_val > greatest_pan and pan_val <= 128 then
       greatest_pan = pan_val
     end
@@ -1297,10 +1297,10 @@ end
 --CALCULATE PAN PLACEMENTS------------------------------------
 local function calculate_fx_placements()
 
-  local least_fx,greatest_fx = 255,0  
-  for k,note in ipairs(selected_notes) do    
+  local least_fx,greatest_fx = 255,0
+  for k,note in ipairs(selected_notes) do
     local fx_val = note.effect_amount_value
-    
+
     if fx_val > greatest_fx and fx_val <= 255 then
       greatest_fx = fx_val
     end
@@ -1317,29 +1317,29 @@ end
 
 --CALCULATE NOTE PLACEMENTS------------------------------------------
 local function calculate_note_placements()
-  
+
   --total range is calculated from the first line, until FF of the last line
   total_delay_range = (selection.end_line - selection.start_line) * 256 + 255
   total_line_range = total_delay_range / 256
-  
+
   --calculate original note placements in our selection range for each note
   for k,note in ipairs(selected_notes) do
-    
-    local line_difference = note.original_index.l - selection.start_line 
-     
+
+    local line_difference = note.original_index.l - selection.start_line
+
     local delay_difference = note.delay_value + (line_difference*256)
-      
+
     local note_place = delay_difference
-    
+
     --store the placement value for this note (a value from 0 - total_delay_range)
     selected_notes[k].placement = note_place
-    
+
     --record the earliest and latest note placements in the selection
     if note_place < earliest_placement then earliest_placement = note_place end
     if note_place > latest_placement then latest_placement = note_place end
-  
+
   end
-  
+
   --calculate redistributed placements in selection range
   local amount_of_notes = #selected_notes
   for k,note in ipairs(selected_notes) do
@@ -1350,7 +1350,7 @@ local function calculate_note_placements()
       0,
       total_delay_range)
   end
-  
+
   --calculate redistributed placements in note range
   for k,note in ipairs(selected_notes) do
     note.redistributed_placement_in_note_range = remap_range(
@@ -1359,25 +1359,25 @@ local function calculate_note_placements()
       1,
       earliest_placement,
       latest_placement)
-      
+
       --if there is only one note, we need to set it here, or it will be left as nan
       if amount_of_notes == 1 then note.redistributed_placement_in_note_range = earliest_placement end
   end
-  
+
   return true
 end
 
 --CALCULATE ALL PLACEMENTS-----------------------------
 local function calculate_all_placements()
-  
+
   calculate_note_placements()
-  
+
   --find the least and greatest volume values in selection
   calculate_vol_placements()
-  
+
   --find the least and greatest panning values in selection
   calculate_pan_placements()
-  
+
   --find the least and greatest fx values in selection
   calculate_fx_placements()
 
@@ -1388,114 +1388,114 @@ end
 local function get_index(s,t,l,c)
 
   local nc,ec = nil,nil
-  
+
   --FIND SEQUENCE INDEX
   if s then
     s = s % get_sequence_length()
     if s == 0 then s = get_sequence_length() end
-  end  
-  
+  end
+
   --FIND TRACK INDEX
   if t then
     t = t % get_track_count()
     if t == 0 then t = get_track_count() end
   end
-  
+
   --FIND COLUMN INDEX
   if c then
     --get the total amount of visible columns for this track
     local vis_note_columns = get_visible_note_columns(t)
     local vis_effect_columns = get_visible_effect_columns(t)
     local total_vis_columns = vis_note_columns + vis_effect_columns
-    
+
     if c > total_vis_columns then --if our desired column is outside of this track
       while c > total_vis_columns do
-      
+
         --subtract this track's amount of note+effect columns from our column index
         c = c - total_vis_columns
-        
+
         --increment the track index (with wrap-around)
         t = (t + 1) % get_track_count()
         if t == 0 then t = get_track_count() end
-      
+
         --get the total amount of visible columns for this new track
         vis_note_columns = get_visible_note_columns(t)
         vis_effect_columns = get_visible_effect_columns(t)
         total_vis_columns = vis_note_columns + vis_effect_columns
-      
+
       end
     elseif c < 1 then
       while c < 1 do
-      
+
         --decrement the track index (with wrap-around)
         t = (t - 1) % get_track_count()
         if t == 0 then t = get_track_count() end
-        
+
         --get the total amount of visible columns for this new track
         vis_note_columns = get_visible_note_columns(t)
         vis_effect_columns = get_visible_effect_columns(t)
         total_vis_columns = vis_note_columns + vis_effect_columns
-      
+
         --add this track's amount of note+effect columns to our column index
         c = c + total_vis_columns
-      
+
       end
     end
-    
-    --figure out if our column index is for a note column, or effect column, 
+
+    --figure out if our column index is for a note column, or effect column,
     --the unused variable will stay as nil
     if c > vis_note_columns then
       ec = c - vis_note_columns
     else
       nc = c
-    end    
+    end
   end
-  
-  
+
+
   --FIND LINE INDEX
   if l then
     --find the correct sequence if our line index lies before or after the bounds of this pattern
-    if l < 1 then  
+    if l < 1 then
       while l < 1 do
-      
+
         --decrement the sequence index (with wrap-around)
         s = (s - 1) % get_sequence_length()
         if s == 0 then s = get_sequence_length() end
-          
+
         --update our line index
         l = l + get_pattern_length_at_seq(s)
-          
-      end  
+
+      end
     elseif l > get_pattern_length_at_seq(s) then
       while true do
-        
+
         --update our line index
         l = l - get_pattern_length_at_seq(s)
-        
+
         --increment the sequence index (with wrap-around)
         s = (s + 1) % get_sequence_length()
         if s == 0 then s = get_sequence_length() end
-              
+
         --break the loop if we find a valid line index
         if l <= get_pattern_length_at_seq(s) then break end
-              
+
       end
     end
   end
-  
+
   return s,t,l,nc,ec
 end
 
 --FIND CORRECT INDEX---------------------------------------
 local function find_correct_index(s,p,t,l,c)
-    
+
   --find the correct sequence if our line index lies before or after the bounds of this pattern
   local _
   s,_,l = get_index(s,nil,l,nil)
-  
+
   --get the new pattern index based on our new sequence index
   p = song.sequencer:pattern(s)
-  
+
   --if overflow is on, then push notes out to empty columns when available
   if flags.overflow then
     while true do
@@ -1503,13 +1503,13 @@ local function find_correct_index(s,p,t,l,c)
       elseif song:pattern(p):track(t):line(l):note_column(c).is_empty then break
       else c = c + 1 end
     end
-    
+
     --record which columns we overflowed into (set to 0 if we didn't overflow at all)
     if not columns_overflowed_into[t] then columns_overflowed_into[t] = 0 end
-    columns_overflowed_into[t] = math.max(columns_overflowed_into[t], c)        
+    columns_overflowed_into[t] = math.max(columns_overflowed_into[t], c)
   end
-  
-  
+
+
   --if condense is on, then pull notes in to empty columns when available
   if flags.condense then
     while true do
@@ -1518,34 +1518,34 @@ local function find_correct_index(s,p,t,l,c)
       else c = c - 1 end
     end
   end
-  
+
   return {s = s, p = p, t = t, c = c, l = l}
 end
 
 --SET TRACK VISIBILITY------------------------------------------
 local function set_track_visibility(t)
-  
+
   if not columns_overflowed_into[t] then columns_overflowed_into[t] = 0 end
-  
+
   local columns_to_show = math.max(columns_overflowed_into[t], originally_visible_columns[1][t])
-  
+
   local time_changed = (time ~= 0) or (time_was_typed and typed_time ~= 1) or (offset ~= 0) or (offset_was_typed and typed_offset ~= 0) or flags.redistribute or curve_intensity[1] ~= 0
-  
-  song:track(t).visible_note_columns = columns_to_show  
+
+  song:track(t).visible_note_columns = columns_to_show
   song:track(t).volume_column_visible = flags.vol or originally_visible_columns[2][t]
   song:track(t).panning_column_visible = flags.pan or originally_visible_columns[3][t]
   song:track(t).delay_column_visible = time_changed or originally_visible_columns[4][t]
   song:track(t).sample_effects_column_visible = flags.fx or originally_visible_columns[5][t]
-  
+
 end
 
 --SET NOTE COLUMN VALUES----------------------------------------------
 local function set_note_column_values(column,vals)
-  
+
   --clamp the delay value to avoid errors
   if vals.delay_value < 0 then vals.delay_value = 0
   elseif vals.delay_value > 255 then vals.delay_value = 255 end
-  
+
   column.note_value = vals.note_value
   column.instrument_value = vals.instrument_value
   column.volume_value = vals.volume_value
@@ -1564,10 +1564,10 @@ local function restore_old_note(counter)
   local t = selected_notes[counter].current_location.t
   local c = selected_notes[counter].current_location.c
   local l = selected_notes[counter].current_location.l
-  
+
   if selected_notes[counter].flags.clear then  --if this note's clear flag is true...
     song:pattern(p):track(t):line(l):note_column(c):clear() --clear the column clean
-  
+
   elseif selected_notes[counter].flags.restore then  --else, if this note's restore flag is true...
 
     --restore the note
@@ -1575,9 +1575,9 @@ local function restore_old_note(counter)
       song:pattern(p):track(t):line(l):note_column(c),
       selected_notes[counter].last_overwritten_values
     )
-    
+
   end
-      
+
 end
 
 --IS WILD-----------------------------------------
@@ -1588,10 +1588,10 @@ local function is_wild(index)
   if not placed_notes[index.p][index.t] then return true end
   if not placed_notes[index.p][index.t][index.l] then return true end
   if not placed_notes[index.p][index.t][index.l][index.c] then return true
-  
+
   --return false if we found one of our notes already in this spot
   else return false end
-  
+
 end
 
 --GET EXISTING NOTE----------------------------------------------
@@ -1601,22 +1601,22 @@ local function get_existing_note(index,counter)
   local column = song:pattern(index.p):track(index.t):line(index.l):note_column(index.c)
 
   if column.is_empty then --if this spot is empty...
-    
+
     selected_notes[counter].flags.write = true --set this note's write flag to true
     selected_notes[counter].flags.clear = true --set this note's clear flag to true
     selected_notes[counter].flags.restore = false  --set this note's restore flag to false
-    
+
   else --else, if this spot is not empty...
     if is_wild(index,counter) then  --if this spot is occupied by a "wild" note...
-      
+
       note_collisions.wild[counter] = true  --record a wild collision for this note
-      
+
       if flags.wild_notes then --if we are overwriting wild notes with our notes...
-        
+
         selected_notes[counter].flags.write = true --set this note's write flag to true
         selected_notes[counter].flags.clear = false --set this note's clear flag to false
-        selected_notes[counter].flags.restore = true  --set this note's restore flag to true        
-        
+        selected_notes[counter].flags.restore = true  --set this note's restore flag to true
+
         --and store the data from the column we're overwriting
         selected_notes[counter].last_overwritten_values = {
           note_value = column.note_value,
@@ -1627,48 +1627,48 @@ local function get_existing_note(index,counter)
           effect_number_value = column.effect_number_value,
           effect_amount_value = column.effect_amount_value
         }
-        
+
       else  --else, if we are not overwriting wild notes with our own...
-        
+
         selected_notes[counter].flags.write = false --set this note's write flag to false
         selected_notes[counter].flags.clear = false --set this note's clear flag to false
-        selected_notes[counter].flags.restore = false  --set this note's restore flag to false 
-        
+        selected_notes[counter].flags.restore = false  --set this note's restore flag to false
+
       end
-    
+
     else  --else, if it is one of our own notes...
-    
+
       note_collisions.ours[counter] = true  --record a collision between our own notes for this note
-      
+
       if flags.our_notes then  --if we are overwriting our own notes...
-        
+
         selected_notes[counter].flags.write = true --set this note's write flag to true
         selected_notes[counter].flags.clear = false --set this note's clear flag to false
         selected_notes[counter].flags.restore = false  --set this note's restore flag to false
 
         --set the overwritten note's write flag false
         selected_notes[placed_notes[index.p][index.t][index.l][index.c]].flags.write = false
-        
+
       else  --else, if we are not overwriting our own notes
-      
+
         selected_notes[counter].flags.write = false --set this note's write flag to false
         selected_notes[counter].flags.clear = false --set this note's clear flag to false
         selected_notes[counter].flags.restore = false  --set this note's restore flag to false
-      
-      end --end: if flags.our_notes    
+
+      end --end: if flags.our_notes
     end --end: if is_wild()
   end --end: column.is_empty
 end
 
 --UPDATE CURRENT NOTE LOCATION----------------------------------------
 local function update_current_note_location(counter,new_index)
-  
+
   --update the current location of the note
   selected_notes[counter].current_location.p = new_index.p
   selected_notes[counter].current_location.t = new_index.t
   selected_notes[counter].current_location.c = new_index.c
   selected_notes[counter].current_location.l = new_index.l
-  
+
 end
 
 --ADD TO PLACED NOTES-----------------------------------------
@@ -1678,7 +1678,7 @@ local function add_to_placed_notes(index,counter)
   if not placed_notes[index.p] then placed_notes[index.p] = {} end
   if not placed_notes[index.p][index.t] then placed_notes[index.p][index.t] = {} end
   if not placed_notes[index.p][index.t][index.l] then placed_notes[index.p][index.t][index.l] = {} end
-  
+
   --set the index equal to the number of the note that has been put in it
   placed_notes[index.p][index.t][index.l][index.c] = counter
 
@@ -1686,11 +1686,11 @@ end
 
 --APPLY CURVE-------------------------------------
 local function apply_curve(placement,type)
-  
+
   local anchors = {}
   if type == 1 then --if we are applying the curve for time
     if anchor_type == 1 then
-      if anchor == 0 then 
+      if anchor == 0 then
         anchors[1] = 0
         anchors[2] = latest_placement - earliest_placement
       else
@@ -1698,10 +1698,10 @@ local function apply_curve(placement,type)
         anchors[2] = 0
       end
     else
-      if anchor == 0 then 
+      if anchor == 0 then
         anchors[1] = 0
         anchors[2] = total_delay_range
-      else 
+      else
         anchors[1] = -(total_delay_range)
         anchors[2] = 0
       end
@@ -1716,15 +1716,15 @@ local function apply_curve(placement,type)
     anchors[1] = flags.fx_min
     anchors[2] = flags.fx_max
   end
-  
+
   --convert our placement range from (anchor1 - anchor2) to (0.0 - 1.0)
   placement = remap_range(placement,anchors[1],anchors[2],0,1)
-  
+
   local points = {} --this will store the two points which we will interpolate between
-  
+
   --initialize point1
   points[1] = curve_points[type].sampled[1]
-  
+
   --find the two points
   for k,p in ipairs(curve_points[type].sampled) do --iterate through our sampled points
     if placement <= p[1] then  --if our placement is less than then xcoord of the point...
@@ -1733,7 +1733,7 @@ local function apply_curve(placement,type)
     end
     points[1] = p --update point1 if the current point isn't point2
   end
-   
+
   --find where our placement sits between our two points
   placement = remap_range(
     placement,
@@ -1742,15 +1742,15 @@ local function apply_curve(placement,type)
     (type == 1 and 1 - points[1][2]) or points[1][2], --we invert if we are working with time,
     (type == 1 and 1 - points[2][2]) or points[2][2]  --because Renoise moves top-to-bottom
   )
-  
+
   if (placement < placement - 1) then --nan check
     print("NAN!!!")
     placement = 0
   end
-  
+
   --convert our placement back to a delay column value
   placement = math.floor(remap_range(placement,0,1,anchors[1],anchors[2]))
-  
+
   return placement
 end
 
@@ -1763,22 +1763,22 @@ local function place_new_note(counter)
   local time_to_use
   if time_was_typed then time_to_use = typed_time
   else time_to_use = time * time_multiplier + 1 end
-  
+
   --decide which offset value to use (typed or sliders)
   local offset_to_use
   if offset_was_typed then offset_to_use = typed_offset * 256
-  else offset_to_use = (offset * 256) * offset_multiplier end  
-  
+  else offset_to_use = (offset * 256) * offset_multiplier end
+
   --decide which anchor to use (where "x0.0000" would be)
   local anchor_to_use
   if anchor_type == 1 then
-    if anchor == 0 then anchor_to_use = earliest_placement  
+    if anchor == 0 then anchor_to_use = earliest_placement
     else anchor_to_use = latest_placement end
   else
-    if anchor == 0 then anchor_to_use = 0   
+    if anchor == 0 then anchor_to_use = 0
     else anchor_to_use = total_delay_range end
   end
-  
+
   --decide which placement values to use
   local placement
   if flags.redistribute then --if redistribution flag is set, we use the redistributed places
@@ -1790,55 +1790,55 @@ local function place_new_note(counter)
   else  --otherwise, we use the original placements
     placement = selected_notes[counter].placement
   end
-  
+
   --recalculate our placements based on our new anchor
   placement = placement - anchor_to_use
-  
+
   --apply our curve remapping to the note if our curve intensity is not 0
   if curve_intensity[1] ~= 0 then placement = apply_curve(placement,1) end
-  
+
   --apply our time and offset values to our placement value
   placement = placement * time_to_use + offset_to_use
-  
+
   --calculate the indexes where the new note will be, based on its new placement value
   local delay_difference = placement + anchor_to_use
   local new_delay_value = (delay_difference % 256)
   local line_difference = math.floor(delay_difference / 256)
   local new_line = selection.start_line + line_difference
-  
+
   --update this note's rel_line_pos
   selected_notes[counter].rel_line_pos = new_line
-  
+
 --adclk(2)
 --stclk(3)
-  
+
   local index = find_correct_index(
     selected_notes[counter].original_index.s,
     selected_notes[counter].original_index.p,
     selected_notes[counter].original_index.t,
     new_line,
     selected_notes[counter].original_index.c
-  )  
-  
+  )
+
   local column = song:pattern(index.p):track(index.t):line(index.l):note_column(index.c)
 
 --adclk(3)
 --stclk(4)
-  
+
   --store the note from the new spot we have moved to
   get_existing_note(index, counter)
 
 --adclk(4)
 --stclk(5)
-  
+
   update_current_note_location(counter, index)
 
---adclk(5)  
+--adclk(5)
 --stclk(6)
-  
+
   local vol_val = selected_notes[counter].volume_value
   if vol_val == 255 then vol_val = 128 end
-  if vol_val <= 128 then 
+  if vol_val <= 128 then
     if flags.vol then
       selected_notes[counter].flags.vol = true
       if flags.vol_re then
@@ -1858,23 +1858,23 @@ local function place_new_note(counter)
           flags.vol_max
         )
       end
-      
+
       vol_val = apply_curve(vol_val,2)
-    
+
     else
       selected_notes[counter].flags.vol = false
     end
   end
-  
+
   --print("vol_val: " .. vol_val)
-  
+
   if vol_val == 128 then vol_val = 255 end
-  
+
   local pan_val = selected_notes[counter].panning_value
   if pan_val == 255 then pan_val = 64 end
-  if pan_val <= 128 then 
+  if pan_val <= 128 then
     if flags.pan then
-      selected_notes[counter].flags.pan = true 
+      selected_notes[counter].flags.pan = true
       if flags.pan_re then
         pan_val = remap_range(
           counter,
@@ -1892,20 +1892,20 @@ local function place_new_note(counter)
           flags.pan_max
         )
       end
-      
+
       pan_val = apply_curve(pan_val,3)
-    
+
     else
       selected_notes[counter].flags.pan = false
     end
   end
-  
+
   --print("pan_val: " .. pan_val)
-  
+
   if pan_val == 64 then pan_val = 255 end
-  
+
   local fx_val = selected_notes[counter].effect_amount_value
-  if fx_val <= 255 then 
+  if fx_val <= 255 then
     if flags.fx then
       selected_notes[counter].flags.fx = true
       if flags.fx_re then
@@ -1925,16 +1925,16 @@ local function place_new_note(counter)
           flags.fx_max
         )
       end
-      
+
       fx_val = apply_curve(fx_val,4)
-      
+
     else
       selected_notes[counter].flags.fx = false
     end
   end
-  
+
   --print("fx_val: " .. fx_val)
-  
+
   if selected_notes[counter].flags.write then
     set_note_column_values(
       column,
@@ -1946,15 +1946,15 @@ local function place_new_note(counter)
         delay_value = new_delay_value,
         effect_number_value = selected_notes[counter].effect_number_value,
         effect_amount_value = fx_val
-      }  
+      }
     )
   end
-  
+
 --adclk(6)
-  
+
   --add note to our placed_notes table
   add_to_placed_notes(index,counter)
-  
+
 end
 
 --UPDATE START POS----------------------------
@@ -1963,14 +1963,14 @@ local function update_start_pos()
   local earliest_note = {number = 0, line = math.huge}
   for k in ipairs(selected_notes) do
     if selected_notes[k].rel_line_pos < earliest_note.line then
-      earliest_note.number = k 
+      earliest_note.number = k
       earliest_note.line = selected_notes[k].rel_line_pos
     end
   end
 
   start_pos.sequence = selected_notes[earliest_note.number].current_location.s
   start_pos.line = selected_notes[earliest_note.number].current_location.l
-  
+
   return true
 end
 
@@ -1981,39 +1981,39 @@ local function binom(n,k)
   if k < 0 or k > n then return 0 end
 
   if not pascals_triangle[n] then pascals_triangle[n] = {} end
-  
+
   if not pascals_triangle[n][k] then
-  
-    pascals_triangle[n][k] = binom(n-1,k-1) + binom(n-1,k)    
-    
+
+    pascals_triangle[n][k] = binom(n-1,k-1) + binom(n-1,k)
+
   end
-  
+
   return pascals_triangle[n][k]
 end
 
 --BERNSTEIN BASIS POLYNOMIAL---------------------------
 local function bern(val,v,n)
 
-  return binom(n,v) * (val^v) * (1 - val)^(n-v)  
+  return binom(n,v) * (val^v) * (1 - val)^(n-v)
 end
 
 --GET CURVE--------------------------------------
 local function get_curve(t,points)
-  
-  local coords = {}  
+
+  local coords = {}
   local numerators,denominators = {0,0},{0,0} --{x,y numerators}, {x,y denominators}
   local n = #points
-  
+
   for j = 1, 2 do --run j loop once for x coords, once for y coords
     for i,point in ipairs(points)do --sum all of the points up with bernstein blending
-      
+
       numerators[j] = numerators[j] + ( bern(t,i-1,n-1) * point[j] * point[3] )
       denominators[j] = denominators[j] + ( bern(t,i-1,n-1) * point[3] )
-      
-    end    
-    coords[j] = numerators[j]/denominators[j]    
+
+    end
+    coords[j] = numerators[j]/denominators[j]
   end
-  
+
   return coords
 end
 
@@ -2032,10 +2032,10 @@ end
 
 --CALCULATE CURVE---------------------------------
 local function calculate_curve(i)
-  
+
   table.clear(curve_points[i].sampled)
-  
-  local points 
+
+  local points
   if curve_intensity[i] > 0 then
     points = curve_points[i][curve_type[i]].positive
   elseif curve_intensity[i] < 0 then
@@ -2043,9 +2043,9 @@ local function calculate_curve(i)
   else
     points = curve_points[i].default.points
   end
-  
+
   local intensity = math.abs(curve_intensity[i])
-  
+
   local samplesize = curve_points[i][curve_type[i]].samplesize
   if curve_intensity[i] ~= 0 then
     samplesize = curve_points[i][curve_type[i]].samplesize
@@ -2053,22 +2053,22 @@ local function calculate_curve(i)
   else
     samplesize = curve_points[i].default.samplesize
   end
-  
+
   --find the x,y coords for each samplesize'd-increment of t along our curve
   for x = 1, samplesize do
-    
+
     --get our t value
     local t = (x-1) / (samplesize-1)
-    
+
     local coords = get_curve(t,points)
     local linear = get_curve(t, curve_points[i].default.points)
-    
+
     --interpolate between our curve, and a linear distribution, based on curve intensity
     coords[1] = intensity * coords[1] + (1 - intensity) * linear[1]
     coords[2] = intensity * coords[2] + (1 - intensity) * linear[2]
-    
-    curve_points[i].sampled[x] = {coords[1],coords[2]}    
-  
+
+    curve_points[i].sampled[x] = {coords[1],coords[2]}
+
   end
 
 end
@@ -2078,7 +2078,7 @@ local function rasterize_curve(i)
 
   --store our buffer from last frame
   curve_displays[i].buffer2 = table.rcopy(curve_displays[i].buffer1)
-  
+
   --clear buffer1 to all 0's
   for x = 1, curve_displays[i].xsize do
     for y = 1, curve_displays[i].ysize do
@@ -2087,56 +2087,56 @@ local function rasterize_curve(i)
   end
 
   if drawmode == "point" then
-  
+
     for p = 1, #curve_points[i].sampled do
-    
+
       local coords = {curve_points[i].sampled[p][1],curve_points[i].sampled[p][2]}
-      
+
       --convert from float in 0-1 range to integer in 1-curve_displays.xsize range
       coords[1] = math.floor(coords[1] * (curve_displays[i].xsize-1) + 1.5)
-      
+
       --convert from float in 0-1 range to integer in 1-curve_displays.ysize range
       coords[2] = math.floor(coords[2] * (curve_displays[i].ysize-1) + 1.5)
-      
+
       if not (coords[1] < coords[1] - 1 and coords[2] < coords[2] - 1) then --nan check
         --add this pixel into our buffer
         curve_displays[i].buffer1[coords[1]][coords[2]] = 1
       end
-      
+
     end
-  
+
   else
 
     for p = 1, #curve_points[i].sampled - 1 do
-      
-      local point_a, point_b, pixel_a, pixel_b = 
+
+      local point_a, point_b, pixel_a, pixel_b =
         { curve_points[i].sampled[p][1], curve_points[i].sampled[p][2] },
         { curve_points[i].sampled[p+1][1], curve_points[i].sampled[p+1][2] },
         {},
         {}
-        
-        
+
+
       --convert point_a from float in 0-1 range to float in 1-curve_displays.xsize range
       point_a[1] = remap_range(point_a[1],0,1,1,curve_displays[i].xsize)
       point_a[2] = remap_range(point_a[2],0,1,1,curve_displays[i].ysize)
-      
+
       --convert point_b from float in 0-1 range to float in 1-curve_displays.xsize range
       point_b[1] = remap_range(point_b[1],0,1,1,curve_displays[i].xsize)
       point_b[2] = remap_range(point_b[2],0,1,1,curve_displays[i].ysize)
-        
+
       --local floatslope = (point_b[2] - point_a[2]) / (point_b[1] - point_a[1]) --y/x
-          
+
       --convert point_a from float to integer (pixel)
       pixel_a[1] = math.floor(point_a[1] + 0.5)
       pixel_a[2] = math.floor(point_a[2] + 0.5)
-      
+
       --convert point_b from float to integer (pixel)
       pixel_b[1] = math.floor(point_b[1] + 0.5)
       pixel_b[2] = math.floor(point_b[2] + 0.5)
-      
+
       --calculate the difference in our x and y coords from point b to point a
       local diff = { pixel_b[1]-pixel_a[1] , pixel_b[2]-pixel_a[2] }
-      
+
       --find out which plane we will traverse by 1 pixel each loop iteration
       local plane
       if math.abs(diff[1]) >= math.abs(diff[2]) then
@@ -2146,42 +2146,42 @@ local function rasterize_curve(i)
         --we want to traverse the y-plane
         plane = 2
       end
-      
+
       --determine if we will be moving in positive or negative direction along plane
       local step = sign(diff[plane])
-      
+
       --calculate our slope
       local slope = step * ((plane == 1 and diff[2]/diff[1]) or diff[1]/diff[2]) --(our slope is dependent on which plane we're on)
-      
+
       local current_coords = {pixel_a[1],pixel_a[2]}
       local slope_acc = point_a[plane%2 + 1] - pixel_a[plane%2 + 1]
       while(true) do
-        
+
         curve_displays[i].buffer1[current_coords[1]][current_coords[2]] = 1
-        
+
         if current_coords[plane] == pixel_b[plane] then break end --if we are at the end pixel, we break
-        
+
         current_coords[plane] = current_coords[plane] + step
         slope_acc = slope_acc + slope
         current_coords[plane%2 + 1] = math.floor(pixel_a[plane%2 + 1] + slope_acc + 0.5)
-      
-      end      
-    end    
+
+      end
+    end
   end
 
 end
 
 --UPDATE CURVE GRID-------------------------------
 local function update_curve_grid(i)
-  
+
   --draw our curve
   for x,column in ipairs(curve_displays[i].display) do
-    for y,pixel in ipairs(column) do      
+    for y,pixel in ipairs(column) do
       if curve_displays[i].buffer1[x][y] ~= curve_displays[i].buffer2[x][y] then
-      
+
         pixel.bitmap = ("Bitmaps/%s.bmp"):format(curve_displays[i].buffer1[x][y])
-        
-      end      
+
+      end
     end
   end
 
@@ -2192,11 +2192,11 @@ end
 local function update_curve_display(i)
 
   if not curve_displays[i].buffer1[1] then init_buffers(i) end  --inits the buffers if needed
-  
+
   calculate_curve(i) --samples points on the curve and stores them
-  
+
   rasterize_curve(i) --interpolates sampled points, adding them to the pixel buffer
-          
+
   update_curve_grid(i) --pushes the pixel buffer to the display
 
   return true
@@ -2206,7 +2206,7 @@ end
 --UPDATE ALL CURVE DISPLAYS-----------------------------
 local function update_all_curve_displays()
 
-  for i = 1, 4 do    
+  for i = 1, 4 do
     update_curve_display(i)
   end
 
@@ -2217,17 +2217,17 @@ end
 local function detect_changes_to_our_note(note)
 
   if note.flags.write then --if the note previously wrote to its current location..
-    
+
     --get access to the note's current column (location)
     local column = song:pattern(note.current_location.p):track(note.current_location.t):line(note.current_location.l):note_column(note.current_location.c)
-    
+
     --update all of the values for this note (note,instr,vol,pan,dly,fx)
     note.note_value = column.note_value
     note.instrument_value = column.instrument_value
     note.effect_number_value = column.effect_number_value
     --local delay_value = column.delay_value
-    
-    if not flags.vol and not note.flags.vol then 
+
+    if not flags.vol and not note.flags.vol then
       local vol = column.volume_value
       if vol ~= note.volume_value then
         flags.vol_changed = true
@@ -2236,8 +2236,8 @@ local function detect_changes_to_our_note(note)
         flags.vol_changed = false
       end
     end
-    
-    if not flags.pan and not note.flags.pan then 
+
+    if not flags.pan and not note.flags.pan then
       local pan = column.panning_value
       if pan ~= note.panning_value then
         flags.pan_changed = true
@@ -2246,8 +2246,8 @@ local function detect_changes_to_our_note(note)
         flags.pan_changed = false
       end
     end
-    
-    if not flags.fx and not note.flags.fx then 
+
+    if not flags.fx and not note.flags.fx then
       local fx = column.effect_amount_value
       if fx ~= note.effect_amount_value then
         flags.fx_changed = true
@@ -2256,35 +2256,35 @@ local function detect_changes_to_our_note(note)
         flags.fx_changed = false
       end
     end
-  
+
   end
 
 --[[
   the selected_notes "struct" consists of...
-  
+
   [1,2 .. n]{
-    
+
     --the index where the note originated from
     original_index = {s,p,t,c,l}
-    
+
     --original values stored from the note
     note_value
     instrument_value
-    volume_value 
+    volume_value
     panning_value
     delay_value
     effect_number_value
     effect_amount_value
-    
+
     rel_line_pos --the line difference between current_location and original_index
-    
+
     current_location = {s,p,t,c,l}  --the new/current index of the note after processing
-    
+
     --precomputed placement values to use for different types of operations
-    placement    
-    redistributed_placement_in_note_range    
+    placement
+    redistributed_placement_in_note_range
     redistributed_placement_in_sel_range
-    
+
     --values stored from last spot this note overwrote
     last_overwritten_values = {
       note_value
@@ -2295,15 +2295,15 @@ local function detect_changes_to_our_note(note)
       effect_number_value
       effect_amount_value
     }
-    
-    flags = {      
+
+    flags = {
       write --tells whether this note should overwrite whatever is at the same index as it is
       clear --tells whether this note should clear the index it is at when it leaves
-      restore --tells whether this note should restore anything next time restoration occurs          
+      restore --tells whether this note should restore anything next time restoration occurs
     }
-    
+
   }
---]]  
+--]]
 
 end
 
@@ -2312,7 +2312,7 @@ local function detect_changes_to_notes()
 
   for _,v in ipairs(selected_notes) do
     detect_changes_to_our_note(v)
-  end  
+  end
 
 end
 
@@ -2321,29 +2321,29 @@ local function apply_reform()
 
 --rstclk(0)
 --stclk(0)
-  
+
   --set the clock we will use to determine if idle processing will be necessary next time
   previous_time = os.clock()
 
   --print("apply_reform()")
-  
+
   if not valid_selection then
     app:show_error("There is no valid selection to operate on!")
     deactivate_controls()
     return false
   end
-  
+
   detect_changes_to_notes()
-  
+
   table.clear(columns_overflowed_into)
   table.clear(note_collisions.ours)
   table.clear(note_collisions.wild)
-  
+
   --restore everything to how it was, so we don't run into our own notes during calculations
   for k in ipairs(selected_notes) do
     restore_old_note(k)
   end
-  
+
   --clear our "placed_notes" table so we can lay them down one by one cleanly
   table.clear(placed_notes)
 
@@ -2351,7 +2351,7 @@ local function apply_reform()
 rstclk(i)
 end
 stclk(1)--]]
-  
+
   --place our notes into place one by one
   for k in ipairs(selected_notes) do
     place_new_note(k)
@@ -2367,68 +2367,68 @@ stclk(1)--]]
 
 --adclk(1)
 --rdclk(1,"place_new_note total clock: ")
-  
+
   --show vol,pan,dly,fx columns and note columns...
   --for first track
-  if is_note_track[selection.start_track] then 
+  if is_note_track[selection.start_track] then
     set_track_visibility(selection.start_track)
   end
-  
+
   --for all middle tracks
   if selection.end_track - selection.start_track > 1 then
-    for t = selection.start_track + 1, selection.end_track - 1 do 
-      if is_note_track[t] then   
+    for t = selection.start_track + 1, selection.end_track - 1 do
+      if is_note_track[t] then
         set_track_visibility(t)
       end
     end
-  end  
-  
+  end
+
   --and for the last track
   if is_note_track[selection.end_track] then
     set_track_visibility(selection.end_track)
   end
-  
+
   --update our valuefield texts
   update_valuefields()
-  
+
   --update our anchor button bitmaps
   update_anchor_bitmaps()
-  
+
   --update theme colors
   set_theme_colors()
-  
+
   --update our collision indicator bitmaps
   update_collision_bitmaps()
-  
+
   --update our start position for spacebar playback
   update_start_pos()
-  
+
   --record the time it took to process everything
   previous_time = os.clock() - previous_time
-  
+
 --adclk(0)
 --rdclk(0,"apply_reform() total clock: ")
-  
+
 end
 
 --if performance becomes a problem, we use add_reform_idle_notifier() instead of apply_reform()
 --APPLY REFORM NOTIFIER----------------------------------
 local function apply_reform_notifier()
-    
+
   apply_reform()
-  
+
   tool.app_idle_observable:remove_notifier(apply_reform_notifier)
-  
+
   --if debugvars.print_notifier_trigger then print("idle notifier triggered!") end
 end
 
 --ADD REFORM IDLE NOTIFIER--------------------------------------
 local function add_reform_idle_notifier()
-  
-  
+
+
   if not tool.app_idle_observable:has_notifier(apply_reform_notifier) then
     tool.app_idle_observable:add_notifier(apply_reform_notifier)
-  
+
     --if debugvars.print_notifier_attach then print("idle notifier attached!") end
   end
 
@@ -2446,7 +2446,7 @@ local function queue_processing()
   else
     add_reform_idle_notifier()
   end
-  
+
   --if apply_reform() took longer than 40ms, we will move processing to idle notifier next time
   if previous_time < 0.04 then
     idle_processing = false
@@ -2462,7 +2462,7 @@ local function strumify()
   anchor_type = 2
   flags.redistribute = true
   queue_processing()
-  
+
   return true
 end
 
@@ -2470,37 +2470,37 @@ end
 local function update_all_controls()
 
   vb_notifiers_on = false
-  
+
   if anchor == 0 then
     vb.views.time_slider.value = -time
   else
     vb.views.time_slider.value = time
-  end   
-  
+  end
+
   vb.views.time_multiplier_rotary.value = time_multiplier
   vb.views.curve_slider.value = curve_intensity[1]
   vb.views.offset_slider.value = -offset
   vb.views.offset_multiplier_rotary.value = offset_multiplier
-  
+
   vb.views.vol_min_box.value = flags.vol_min
   vb.views.vol_slider.value = curve_intensity[2]
   vb.views.vol_max_box.value = flags.vol_max
-  
+
   vb.views.pan_min_box.value = flags.pan_min
   vb.views.pan_slider.value = curve_intensity[3]
   vb.views.pan_max_box.value = flags.pan_max
-  
+
   vb.views.fx_min_box.value = flags.fx_min
   vb.views.fx_slider.value = curve_intensity[4]
   vb.views.fx_max_box.value = flags.fx_max
-  
+
   set_theme_colors()
   update_vol_pan_fx_bitmaps()
   update_valuefields()
   update_anchor_bitmaps()
   update_collision_bitmaps()
   update_all_curve_displays()
-  
+
   vb_notifiers_on = true
 
   return true
@@ -2509,32 +2509,32 @@ end
 --SPACE KEY-----------------------------------
 --plays back from the earliest note in the selection
 local function space_key()
-  
+
   if os.clock() - last_spacebar > 0.05 then --after typing in a valuebox, space_key() double-triggers for some reason, so we need to use this timer to make sure it only triggers once per 50ms or so
     if not song.transport.playing then
-      song.transport:start_at(start_pos) 
+      song.transport:start_at(start_pos)
     else
       song.transport:stop()
     end
   end
-  
+
   last_spacebar = os.clock()
-  
+
   return true
 end
 
 --SHIFT SPACE KEY-----------------------------------
 --plays back from the current position of the edit cursor
 local function shift_space_key()
-  
+
   if os.clock() - last_spacebar > 0.05 then --after typing in a valuebox, space_key() double-triggers for some reason, so we need to use this timer to make sure it only triggers once per 50ms or so
     if not song.transport.playing then
-      song.transport:start_at(song.transport.edit_pos) 
+      song.transport:start_at(song.transport.edit_pos)
     else
       song.transport:stop()
     end
   end
-  
+
   last_spacebar = os.clock()
 
   return true
@@ -2543,14 +2543,14 @@ end
 --UP KEY--------------------------------------------
 --navigates up one line (jumps between patterns & wraps around at top of sequence)
 local function up_key()
-  
+
   local s,_,l = get_index(
     song.selected_sequence_index,
     1,
     song.selected_line_index - 1,
     1
   )
-  
+
   song.selected_sequence_index = s
   song.selected_line_index = l
 
@@ -2566,7 +2566,7 @@ local function down_key()
     song.selected_line_index + 1,
     1
   )
-  
+
   song.selected_sequence_index = s
   song.selected_line_index = l
 
@@ -2580,7 +2580,7 @@ local function left_key()
 
   --find our current column index
   local column
-  
+
   --if we do not have an effect column selected, then we have a note column selected
   if song.selected_effect_column_index == 0 then
     column = song.selected_note_column_index
@@ -2594,10 +2594,10 @@ local function left_key()
     song.selected_line_index,
     column - 1
   )
-  
+
   song.selected_sequence_index = s
   song.selected_track_index = t
-  song.selected_line_index = l  
+  song.selected_line_index = l
   if nc then song.selected_note_column_index = nc
   elseif ec then song.selected_effect_column_index = ec end
 
@@ -2608,10 +2608,10 @@ end
 local function right_key()
 
   local track = song.selected_track_index
-  
+
   --find our current column index
   local column
-  
+
   --if we do not have an effect column selected, then we have a note column selected
   if song.selected_effect_column_index == 0 then
     column = song.selected_note_column_index
@@ -2625,10 +2625,10 @@ local function right_key()
     song.selected_line_index,
     column + 1
   )
-  
+
   song.selected_sequence_index = s
   song.selected_track_index = t
-  song.selected_line_index = l  
+  song.selected_line_index = l
   if nc then song.selected_note_column_index = nc
   elseif ec then song.selected_effect_column_index = ec end
 
@@ -2644,13 +2644,13 @@ local function tab_key()
     song.selected_line_index,
     1
   )
-  
+
   song.selected_sequence_index = s
   song.selected_track_index = t
   song.selected_line_index = l
-  
+
   if nc then song.selected_note_column_index = nc
-  elseif ec then song.selected_effect_column_index = ec end  
+  elseif ec then song.selected_effect_column_index = ec end
 
 end
 
@@ -2664,19 +2664,19 @@ local function shift_tab_key()
     song.selected_line_index,
     1
   )
-  
+
   song.selected_sequence_index = s
   song.selected_track_index = t
   song.selected_line_index = l
-  
+
   if nc then song.selected_note_column_index = nc
-  elseif ec then song.selected_effect_column_index = ec end  
+  elseif ec then song.selected_effect_column_index = ec end
 
 end
 
 --MOD ARROW KEY------------------------------------------
 local function mod_arrow_key(control, alt_control, multiplier, repeated)
-  
+
   local control_val = control.value
   local control_min_max = {[-1] = control.min, [1] = control.max}
   local alt_control_val, alt_control_min_max
@@ -2684,27 +2684,27 @@ local function mod_arrow_key(control, alt_control, multiplier, repeated)
     alt_control_val = alt_control.value
     alt_control_min_max = {[-1] = alt_control.min, [1] = alt_control.max}
   end
-  
+
   local sign = sign(multiplier)
-  
-  local increment  
+
+  local increment
   if not repeated then
     last_arrow_key_time = os.clock()
     increment = control_increments[1]
   else
     increment = control_increments[2] * math.pow((os.clock() - last_arrow_key_time), 2)
   end
-  
+
   if (not alt_control) or (control_val ~= control_min_max[-1] and control_val ~= control_min_max[1]) then
-    
+
     control_val = control_val + increment*multiplier
     if control_val < control_min_max[-1] then control_val = control_min_max[-1]
     elseif control_val > control_min_max[1] then control_val = control_min_max[1]
     end
     control.value = control_val
-  
+
   else
-  
+
     if control_val == control_min_max[sign] then
       alt_control_val = alt_control_val + (increment*math.abs(multiplier))
     elseif control_val == control_min_max[-sign] then
@@ -2716,14 +2716,14 @@ local function mod_arrow_key(control, alt_control, multiplier, repeated)
       end
       alt_control_val = alt_control_val - (increment*math.abs(multiplier))
     end
-    
+
     if alt_control_val < alt_control_min_max[-1] then
       alt_control_val = alt_control_min_max[-1]
     elseif alt_control_val > alt_control_min_max[1] then
       alt_control_val = alt_control_min_max[1]
     end
     alt_control.value = alt_control_val
-    
+
   end
 
 end
@@ -2762,20 +2762,20 @@ end
 
 --CHANGE OUR COLLISION MODE--------------------------------
 local function change_our_collision_mode(bool)
-  
+
   flags.our_notes = bool
   update_all_controls()
   queue_processing()
-  
+
 end
 
 --CHANGE WILD COLLISION MODE--------------------------------
 local function change_wild_collision_mode(bool)
-  
+
   flags.wild_notes = bool
   update_all_controls()
   queue_processing()
-  
+
 end
 
 --TOGGLE OVERFLOW MODE--------------------------------
@@ -2805,12 +2805,12 @@ local function toggle_redistribute_mode()
 
 end
 
---SHOW WINDOW---------------------------------------------------- 
+--SHOW WINDOW----------------------------------------------------
 local function show_window()
 
   --prepare the window content if it hasn't been done yet
-  if not window_content then  
-    
+  if not window_content then
+
     --set our default sizes/margins and such
     local sliders_width = 22
     local sliders_height = 110
@@ -2836,13 +2836,13 @@ local function show_window()
       "body_color", -- same as 'button_back' but with body text/back color
       "main_color", -- same as 'button_back' but with main text/back colors
     }
-    
+
     --create the curve displays
     local curvedisplayrow = {}
     for i = 1, 4 do
       curvedisplayrow[i] = vb:row {}
       --populate the display
-      for x = 1, curve_displays[i].xsize do       
+      for x = 1, curve_displays[i].xsize do
         curve_displays[i].display[x] = {}
         local column = vb:column {}
         for y = 1, curve_displays[i].ysize do
@@ -2858,35 +2858,35 @@ local function show_window()
         curvedisplayrow[i]:add_child(column)
       end
     end
-    
-    
+
+
     window_content = vb:column {  --our entire view will be in one big column
       id = "window_content",
-            
+
       vb:row {  --1ST ROW (contains sliders, and vol/pan/fx buttons)
-      
+
         vb:column { --contains time/curve/offset columns
-                
+
           vb:horizontal_aligner { --aligns time/curve/offset control groups to window width
             mode = "distribute",
             margin = default_margin,
-          
+
             vb:column { --contains all time-related controls
-              style = main_rack_style,              
+              style = main_rack_style,
               vb:space {height = default_gap},
-              
+
               vb:horizontal_aligner { --aligns icon in column
-                mode = "justify",                
-                vb:column {                
+                mode = "justify",
+                vb:column {
                   vb:bitmap { --icon at top of time controls
                     bitmap = "Bitmaps/scale.bmp",
                     mode = "body_color"
                   }
                 }
               },
-              
+
               vb:horizontal_aligner { --aligns time valuefield in column
-                mode = "center",                
+                mode = "center",
                 vb:valuefield {
                   id = "time_text",
                   tooltip = "Type precise Time Scale values here!",
@@ -2894,8 +2894,8 @@ local function show_window()
                   min = -256,
                   max = 256,
                   value = time,
-                  
-                  --tonumber converts any typed-in user input to a number value 
+
+                  --tonumber converts any typed-in user input to a number value
                   --(called only if value was typed)
                   tonumber = function(str)
                     local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
@@ -2905,89 +2905,89 @@ local function show_window()
                     if val and -256 <= val and val <= 256 then --if val is a number, and within min/max
                       --if debugvars.print_valuefield then print("time tonumber = " .. val) end
                       typed_time = val
-                      time_was_typed = true                     
+                      time_was_typed = true
                       queue_processing()
                     end
                     return val
                   end,
-                  
-                  --tostring is called when field is clicked, 
+
+                  --tostring is called when field is clicked,
                   --after tonumber is called,
                   --and after the notifier is called
                   --it converts the value to a formatted string to be displayed
                   tostring = function(value)
                     --if debugvars.print_valuefield then print(("time tostring = x%.3f"):format(value)) end
                     return ("x%.3f"):format(value)
-                  end,        
-                  
+                  end,
+
                   --notifier is called whenever the value is changed
                   notifier = function(value)
                   --if debugvars.print_valuefield then print("time_text notifier") end
                   end
                 }
               },
-              
+
               vb:horizontal_aligner { --aligns time slider in column
-                mode = "center",                            
-                vb:minislider {    
-                  id = "time_slider", 
-                  tooltip = "Time Scale", 
-                  min = -1, 
-                  max = 1, 
-                  value = time-1, 
-                  width = sliders_width, 
-                  height = sliders_height, 
+                mode = "center",
+                vb:minislider {
+                  id = "time_slider",
+                  tooltip = "Time Scale",
+                  min = -1,
+                  max = 1,
+                  value = time-1,
+                  width = sliders_width,
+                  height = sliders_height,
                   notifier = function(value)
                   if vb_notifiers_on then
                       if anchor == 0 then
                         time = -value
                       else
                         time = value
-                      end              
+                      end
                       time_was_typed = false
-                      queue_processing() 
+                      queue_processing()
                     end
-                  end    
+                  end
                 }
               },
-                
+
               vb:horizontal_aligner { --aligns time rotary in column
-                mode = "justify",                
-                vb:rotary { 
-                  id = "time_multiplier_rotary", 
+                mode = "justify",
+                vb:rotary {
+                  id = "time_multiplier_rotary",
                   tooltip = "Time Scale Multiplier",
-                  min = 1, 
-                  max = 63, 
-                  value = time_multiplier, 
-                  width = multipliers_size, 
-                  height = multipliers_size, 
-                  notifier = function(value)              
+                  min = 1,
+                  max = 63,
+                  value = time_multiplier,
+                  width = multipliers_size,
+                  height = multipliers_size,
+                  notifier = function(value)
                     if vb_notifiers_on then
                       time_multiplier = value
                       time_was_typed = false
                       queue_processing()
                     end
-                  end 
-                }, --close rotary                         
+                  end
+                }, --close rotary
               }, --close horizontal rotary aligner
-              
-              vb:space {height = default_gap}                            
+
+              vb:space {height = default_gap}
             }, --close time controls column
-            
-            
+
+
             vb:column { --contains all curve-related controls
               id = "curve_column",
               style = main_rack_style,
-              
+
               vb:space {height = default_gap},
-              
+
               vb:horizontal_aligner { --aligns curve display in column
                 mode = "justify",
-                curvedisplayrow[1],                
+                curvedisplayrow[1],
               },
-              
+
               vb:horizontal_aligner { --aligns curve valuefield in column
-                mode = "center",                
+                mode = "center",
                 vb:valuefield {
                   id = "curve_text",
                   tooltip = "Type precise Time Curve values here!",
@@ -2995,8 +2995,8 @@ local function show_window()
                   min = -1,
                   max = 1,
                   value = 0,
-                  
-                  --tonumber converts any typed-in user input to a number value 
+
+                  --tonumber converts any typed-in user input to a number value
                   --(called only if value was typed)
                   tonumber = function(str)
                     local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
@@ -3011,31 +3011,31 @@ local function show_window()
                     end
                     return val
                   end,
-                  
-                  --tostring is called when field is clicked, 
+
+                  --tostring is called when field is clicked,
                   --after tonumber is called,
                   --and after the notifier is called
                   --it converts the value to a formatted string to be displayed
                   tostring = function(value)
                     return ("x%.3f"):format(value)
-                  end,        
-                  
+                  end,
+
                   --notifier is called whenever the value is changed
                   notifier = function(value)
                   end
                 } --close curve valuefield
               },  --close curve valuefield aligner
-              
+
               vb:horizontal_aligner { --aligns curve slider in column
-                mode = "center",                            
-                vb:minislider {    
-                  id = "curve_slider", 
-                  tooltip = "Time Curve", 
-                  min = -1, 
-                  max = 1, 
-                  value = curve_intensity[1], 
-                  width = sliders_width, 
-                  height = sliders_height, 
+                mode = "center",
+                vb:minislider {
+                  id = "curve_slider",
+                  tooltip = "Time Curve",
+                  min = -1,
+                  max = 1,
+                  value = curve_intensity[1],
+                  width = sliders_width,
+                  height = sliders_height,
                   notifier = function(value)
                     if vb_notifiers_on then
                       curve_intensity[1] = value
@@ -3043,15 +3043,15 @@ local function show_window()
                       update_curve_display(1)
                       queue_processing()
                     end
-                  end    
-                }          
+                  end
+                }
               },  --close curve slider aligner
-              
+
               vb:horizontal_aligner { --aligns curve type selector
-                mode = "center",                
+                mode = "center",
                 vb:vertical_aligner {
-                  mode = "top",                  
-                  vb:row {                
+                  mode = "top",
+                  vb:row {
                     vb:bitmap {
                       id = "curve_type_1",
                       tooltip = "Curve Type",
@@ -3078,30 +3078,30 @@ local function show_window()
                         queue_processing()
                       end
                     },
-                    
-                    vb:space{height = 24},                                        
+
+                    vb:space{height = 24},
                   },  --close curve type row
-                  
-                  vb:space {height = default_gap}                  
-                } --close curve type vertical aligner                  
+
+                  vb:space {height = default_gap}
+                } --close curve type vertical aligner
               } --close curve type horizontal aligner
             }, --close curve controls column
-          
-        
+
+
             vb:column { --contains all offset-related controls
-              style = main_rack_style,              
+              style = main_rack_style,
               vb:space {height = default_gap},
-            
+
               vb:horizontal_aligner { --aligns offset icon in column
-                mode = "justify",                
+                mode = "justify",
                 vb:bitmap { --icon at top of offset controls
                   bitmap = "Bitmaps/arrows.bmp",
                   mode = "body_color"
                 }
               },
-            
+
               vb:horizontal_aligner { --aligns offset valuefield in column
-                mode = "center",                
+                mode = "center",
                 vb:valuefield {
                   id = "offset_text",
                   tooltip = "Type precise Time Shift values here!",
@@ -3109,7 +3109,7 @@ local function show_window()
                   min = -256,
                   max = 256,
                   value = 0,
-                  
+
                   --called when a value is typed in, to convert the input string to a number value
                   tonumber = function(str)
                     local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
@@ -3124,86 +3124,86 @@ local function show_window()
                     end
                     return val
                   end,
-                  
+
                   --called when field is clicked, after tonumber is called, and after notifier is called
                   --it converts the value to a formatted string to be displayed
                   tostring = function(value)
                     --if debugvars.print_valuefield then print(("offset tostring = %.1f lines"):format(value)) end
-                    if value == 0 then return "0.0 lines" end           
+                    if value == 0 then return "0.0 lines" end
                     return ("%.1f lines"):format(value)
                   end,
-                  
+
                   --called whenever the value is changed
                   notifier = function(value)
                   --if debugvars.print_valuefield then print("offset_text notifier") end
                   end
                 } --close offset valuefield
               }, --close offset valuefield horizontal aligner
-              
+
               vb:horizontal_aligner { --aligns offset slider in column
-                mode = "center",              
-                vb:minislider {    
-                  id = "offset_slider", 
-                  tooltip = "Time Shift", 
-                  min = -1, 
-                  max = 1, 
-                  value = 0, 
-                  width = sliders_width, 
-                  height = sliders_height, 
-                  notifier = function(value)            
+                mode = "center",
+                vb:minislider {
+                  id = "offset_slider",
+                  tooltip = "Time Shift",
+                  min = -1,
+                  max = 1,
+                  value = 0,
+                  width = sliders_width,
+                  height = sliders_height,
+                  notifier = function(value)
                     if vb_notifiers_on then
                       offset_was_typed = false
                       offset = -value
                       queue_processing()
                     end
-                  end    
+                  end
                 }
               },  --close offset slider aligner
-              
+
               vb:horizontal_aligner { --aligns offset rotary in column
-                mode = "justify",              
-                vb:rotary { 
-                  id = "offset_multiplier_rotary", 
-                  tooltip = "Time Shift Multiplier", 
-                  min = 1, 
-                  max = 63, 
-                  value = 1, 
-                  width = multipliers_size, 
-                  height = multipliers_size, 
-                  notifier = function(value)              
+                mode = "justify",
+                vb:rotary {
+                  id = "offset_multiplier_rotary",
+                  tooltip = "Time Shift Multiplier",
+                  min = 1,
+                  max = 63,
+                  value = 1,
+                  width = multipliers_size,
+                  height = multipliers_size,
+                  notifier = function(value)
                     if vb_notifiers_on then
                       offset_was_typed = false
                       offset_multiplier = value
                       queue_processing()
                     end
-                  end 
-                } --close rotary                
+                  end
+                } --close rotary
               }, --close rotary aligner
-              
-              vb:space {height = default_gap}              
+
+              vb:space {height = default_gap}
             } --close offset column
           } --close time/curve/offset aligner
         }, --close time/curve/offset column
-        
-        
-        
+
+
+
         vb:column { --contains all volume-related controls
           margin = 2,
           id = "vol_column",
           style = re_rack_style,
-          visible = false,          
+          visible = false,
           vb:space{height = default_margin},
-          
+
           vb:horizontal_aligner { --aligns icon in column
-            mode = "center",            
+            mode = "center",
             vb:bitmap { --icon at top of controls
               bitmap = "Bitmaps/vol.bmp",
               mode = "body_color"
             }
           },
-          
+
           vb:space{height = default_margin},
-          
+
           vb:valuebox {
             id = "vol_max_box",
             tooltip = "Volume High",
@@ -3212,63 +3212,63 @@ local function show_window()
             min = 0,
             max = 128,
             value = 128,
-            
+
             --called when a value is typed in, to convert the input string to a number value
             tonumber = function(str)
               return tonumber(str, 0x10)
             end,
-            
+
             --called when field is clicked, after tonumber is called, and after the notifier is called
             --it converts the value to a formatted string to be displayed
             tostring = function(val)
               return ("%.2X"):format(val)
             end,
-            
+
             --called whenever the value is changed
             notifier = function(val)
               if vb_notifiers_on then
                 flags.vol_max = (val <= 128 and val) or 128
                 queue_processing()
               end
-            end          
+            end
           }, --close volume valuebox
-          
+
           vb:space{height = default_margin},
-          
+
           vb:horizontal_aligner {
             mode = "distribute",
-          
+
             vb:column {
-            
+
               vb:horizontal_aligner {
                 mode = "center",
-                
+
                 curvedisplayrow[2]
               },
-            
+
               vb:horizontal_aligner { --aligns slider in column
                 mode = "center",
-              
-                vb:minislider {    
-                  id = "vol_slider", 
-                  tooltip = "Volume Curve", 
-                  min = -1, 
-                  max = 1, 
-                  value = curve_intensity[2], 
-                  width = re_sliders_width, 
-                  height = re_sliders_height, 
-                  notifier = function(value)            
+
+                vb:minislider {
+                  id = "vol_slider",
+                  tooltip = "Volume Curve",
+                  min = -1,
+                  max = 1,
+                  value = curve_intensity[2],
+                  width = re_sliders_width,
+                  height = re_sliders_height,
+                  notifier = function(value)
                     if vb_notifiers_on then
                       curve_intensity[2] = value
                       update_curve_display(2)
                       queue_processing()
                     end
-                  end    
+                  end
                 }
               }
             }
           },
-          
+
           vb:valuebox {
             id = "vol_min_box",
             tooltip = "Volume Low",
@@ -3277,18 +3277,18 @@ local function show_window()
             min = 0,
             max = 128,
             value = 0,
-            
+
             --called when a value is typed in, to convert the input string to a number value
             tonumber = function(str)
               return tonumber(str, 0x10)
             end,
-            
+
             --called when field is clicked, after tonumber is called, and after the notifier is called
             --it converts the value to a formatted string to be displayed
             tostring = function(val)
               return ("%.2X"):format(val)
-            end,        
-            
+            end,
+
             --called whenever the value is changed
             notifier = function(val)
               if vb_notifiers_on then
@@ -3296,12 +3296,12 @@ local function show_window()
                 queue_processing()
               end
             end
-          
+
           },
-          
+
           vb:horizontal_aligner { --aligns in column
             mode = "center",
-            
+
             vb:button { --redistribute button
               id = "vol_re_button",
               tooltip = "Redistribute Volume levels evenly",
@@ -3312,29 +3312,29 @@ local function show_window()
                 queue_processing()
               end
             }
-          }          
+          }
         }, --close volume controls column
-        
+
         vb:column { --contains all panning-related controls
           margin = 2,
           id = "pan_column",
           style = re_rack_style,
           --margin = default_margin,
           visible = false,
-          
+
           vb:space{height = default_margin},
-          
+
           vb:horizontal_aligner { --aligns icon in column
             mode = "center",
-            
+
             vb:bitmap { --icon at top of controls
               bitmap = "Bitmaps/pan.bmp",
               mode = "body_color"
             }
           },
-          
+
           vb:space{height = default_margin},
-          
+
           vb:valuebox {
             id = "pan_max_box",
             tooltip = "Pan High",
@@ -3343,63 +3343,63 @@ local function show_window()
             min = 0,
             max = 128,
             value = 128,
-            
+
             --called when a value is typed in, to convert the input string to a number value
             tonumber = function(str)
               return tonumber(str, 0x10)
             end,
-            
+
             --called when field is clicked, after tonumber is called, and after the notifier is called
             --it converts the value to a formatted string to be displayed
             tostring = function(val)
               return ("%.2X"):format(val)
             end,
-            
+
             --called whenever the value is changed
             notifier = function(val)
               if vb_notifiers_on then
                 flags.pan_max = (val < 255 and val) or 255
                 queue_processing()
               end
-            end          
+            end
           }, --close pan valuebox
-          
+
           vb:space{height = default_margin},
-          
+
           vb:horizontal_aligner {
             mode = "distribute",
-          
+
             vb:column { --contains panning remapping controls
-            
+
               vb:horizontal_aligner {
                 mode = "center",
-                
+
                 curvedisplayrow[3]
               },
-              
+
               vb:horizontal_aligner { --aligns slider in column
                 mode = "center",
-              
-                vb:minislider {    
-                  id = "pan_slider", 
-                  tooltip = "Pan Curve", 
-                  min = -1, 
-                  max = 1, 
-                  value = curve_intensity[3], 
-                  width = re_sliders_width, 
-                  height = re_sliders_height, 
-                  notifier = function(value)            
+
+                vb:minislider {
+                  id = "pan_slider",
+                  tooltip = "Pan Curve",
+                  min = -1,
+                  max = 1,
+                  value = curve_intensity[3],
+                  width = re_sliders_width,
+                  height = re_sliders_height,
+                  notifier = function(value)
                     if vb_notifiers_on then
                       curve_intensity[3] = value
                       update_curve_display(3)
                       queue_processing()
                     end
-                  end    
+                  end
                 }
               }
             }
           },  --close horizontal aligner
-            
+
           vb:valuebox {
             id = "pan_min_box",
             tooltip = "Pan Low",
@@ -3408,18 +3408,18 @@ local function show_window()
             min = 0,
             max = 128,
             value = 0,
-            
+
             --called when a value is typed in, to convert the input string to a number value
             tonumber = function(str)
               return tonumber(str, 0x10)
             end,
-            
+
             --called when field is clicked, after tonumber is called, and after the notifier is called
             --it converts the value to a formatted string to be displayed
             tostring = function(val)
               return ("%.2X"):format(val)
-            end,        
-            
+            end,
+
             --called whenever the value is changed
             notifier = function(val)
               if vb_notifiers_on then
@@ -3427,12 +3427,12 @@ local function show_window()
                 queue_processing()
               end
             end
-          
+
           },
-          
+
           vb:horizontal_aligner { --aligns in column
             mode = "center",
-            
+
             vb:button { --redistribute button
               id = "pan_re_button",
               tooltip = "Redistribute Pan values evenly",
@@ -3443,29 +3443,29 @@ local function show_window()
                 queue_processing()
               end
             }
-          }          
-        }, --close panning controls column       
-        
+          }
+        }, --close panning controls column
+
         vb:column { --contains all fx-related controls
           margin = 2,
           id = "fx_column",
           style = re_rack_style,
           --margin = default_margin,
           visible = false,
-          
+
           vb:space{height = default_margin},
-          
+
           vb:horizontal_aligner { --aligns icon in column
             mode = "center",
-            
+
             vb:bitmap { --icon at top of controls
               bitmap = "Bitmaps/fx.bmp",
               mode = "body_color"
             }
           },
-          
+
           vb:space{height = default_margin},
-          
+
           vb:valuebox {
             id = "fx_max_box",
             tooltip = "FX Amount High",
@@ -3474,63 +3474,63 @@ local function show_window()
             min = 0,
             max = 255,
             value = 255,
-            
+
             --called when a value is typed in, to convert the input string to a number value
             tonumber = function(str)
               return tonumber(str, 0x10)
             end,
-            
+
             --called when field is clicked, after tonumber is called, and after the notifier is called
             --it converts the value to a formatted string to be displayed
             tostring = function(val)
               return ("%.2X"):format(val)
             end,
-            
+
             --called whenever the value is changed
             notifier = function(val)
               if vb_notifiers_on then
                 flags.fx_max = (val <= 255 and val) or 255
                 queue_processing()
               end
-            end          
+            end
           }, --close fx valuebox
-          
+
           vb:space{height = default_margin},
-          
+
           vb:horizontal_aligner {
             mode = "distribute",
-          
+
             vb:column { --contains FX remapping controls
-            
+
               vb:horizontal_aligner {
                 mode = "center",
-                
+
                 curvedisplayrow[4]
               },
-              
+
               vb:horizontal_aligner { --aligns slider in column
                 mode = "center",
-              
-                vb:minislider {    
-                  id = "fx_slider", 
-                  tooltip = "FX Amount Curve", 
-                  min = -1, 
-                  max = 1, 
-                  value = curve_intensity[3], 
-                  width = re_sliders_width, 
-                  height = re_sliders_height, 
-                  notifier = function(value)            
+
+                vb:minislider {
+                  id = "fx_slider",
+                  tooltip = "FX Amount Curve",
+                  min = -1,
+                  max = 1,
+                  value = curve_intensity[3],
+                  width = re_sliders_width,
+                  height = re_sliders_height,
+                  notifier = function(value)
                     if vb_notifiers_on then
                       curve_intensity[4] = value
                       update_curve_display(4)
                       queue_processing()
                     end
-                  end    
+                  end
                 }
               }
             }
           },  --close horizontal aligner
-            
+
           vb:valuebox {
             id = "fx_min_box",
             tooltip = "FX Amount Low",
@@ -3539,18 +3539,18 @@ local function show_window()
             min = 0,
             max = 255,
             value = 0,
-            
+
             --called when a value is typed in, to convert the input string to a number value
             tonumber = function(str)
               return tonumber(str, 0x10)
             end,
-            
+
             --called when field is clicked, after tonumber is called, and after the notifier is called
             --it converts the value to a formatted string to be displayed
             tostring = function(val)
               return ("%.2X"):format(val)
-            end,        
-            
+            end,
+
             --called whenever the value is changed
             notifier = function(val)
               if vb_notifiers_on then
@@ -3558,12 +3558,12 @@ local function show_window()
                 queue_processing()
               end
             end
-          
+
           },
-          
+
           vb:horizontal_aligner { --aligns in column
             mode = "center",
-            
+
             vb:button { --redistribute button
               id = "fx_re_button",
               tooltip = "Redistribute FX amounts evenly",
@@ -3574,24 +3574,24 @@ local function show_window()
                 queue_processing()
               end
             }
-          }          
-        } --close FX controls column 
-        
+          }
+        } --close FX controls column
+
       }, --close row
-            
+
       vb:row { --2ND ROW (contains overflow/condense/redistribute, anchor, collision, & help controls)
         height = 69,
         margin = 1,
-        
-        vb:column { --column containing overflow/condense/redistribute controls          
+
+        vb:column { --column containing overflow/condense/redistribute controls
           style = "group",
           vb:space{height = 2, width = 40},
-          
+
           vb:horizontal_aligner {
             mode = "center",
             vb:column {
-              vb:button { 
-                id = "overflow_button", 
+              vb:button {
+                id = "overflow_button",
                 tooltip = "Use available empty columns if necessary (to avoid note collisions)",
                 bitmap = "Bitmaps/overflow.bmp",
                 width = 36,
@@ -3601,9 +3601,9 @@ local function show_window()
                     flags.overflow = not flags.overflow
                     queue_processing()
                   end
-                end 
-              },            
-              vb:button { 
+                end
+              },
+              vb:button {
                 id = "condense_button",
                 tooltip = "Use as few columns as possible (without any note collisions)",
                 bitmap = "Bitmaps/condense.bmp",
@@ -3614,9 +3614,9 @@ local function show_window()
                     flags.condense = not flags.condense
                     queue_processing()
                   end
-                end 
-              },            
-              vb:button { 
+                end
+              },
+              vb:button {
                 id = "redistribute_button",
                 tooltip = "Redistribute note timings evenly",
                 bitmap = "Bitmaps/redistribute.bmp",
@@ -3627,16 +3627,16 @@ local function show_window()
                     flags.redistribute = not flags.redistribute
                     queue_processing()
                   end
-                end 
+                end
               }
             }
           },
-          
+
           vb:space{height = 2, width = 40}
         },  --close overflow/condense/redistribute column
-        
+
         vb:space {width = 7},
-        
+
         vb:row {
           height = 44,
           vb:bitmap {
@@ -3651,7 +3651,7 @@ local function show_window()
                 queue_processing()
               end
             end
-          },                
+          },
           vb:bitmap {
             tooltip = tooltips.collision_wild[1],
             id = "collision_wild_bmp",
@@ -3664,11 +3664,11 @@ local function show_window()
                 queue_processing()
               end
             end
-          } 
+          }
         }, --close collision row
-        
+
         vb:space{width = 11},
-        
+
         vb:column { --column/row containing anchor controls
           vb:row {
             spacing = -29,
@@ -3676,10 +3676,10 @@ local function show_window()
               bitmap = "Bitmaps/anchor.bmp",
               mode = bitmap_modes[5]
             },
-            
+
             vb:column {
               vb:space{height=39},
-              vb:row {   
+              vb:row {
                 vb:bitmap {
                   id = "anchorTL",
                   tooltip = "Set anchor to earliest note",
@@ -3726,18 +3726,18 @@ local function show_window()
                     queue_processing()
                   end
                 }
-              }              
-            } --close anchor buttons column          
+              }
+            } --close anchor buttons column
           } --close anchor row
         },  --close anchor column
-        
+
         vb:space{width = 8},
-        
+
         vb:vertical_aligner {  --contains vol,pan,fx buttons
           mode = "top",
           vb:column {
             spacing = 0,
-          
+
             vb:bitmap {
               id = "volbutton",
               tooltip = "Volume Transform",
@@ -3754,7 +3754,7 @@ local function show_window()
                 queue_processing()
               end
             },
-            
+
             vb:bitmap {
               id = "panbutton",
               tooltip = "Pan Transform",
@@ -3771,7 +3771,7 @@ local function show_window()
                 queue_processing()
               end
             },
-            
+
             vb:bitmap {
               id = "fxbutton",
               tooltip = "FX Amount Transform",
@@ -3789,7 +3789,7 @@ local function show_window()
               end
             } --close fxbutton
           }, --close vol/pan/fx vertical aligner
-          
+
           vb:horizontal_aligner {
             mode = "right",
             vb:button {
@@ -3800,46 +3800,46 @@ local function show_window()
               notifier = function()
                 app:open_url("https://www.aqu.surf/reform")
               end
-            } --close help button   
-          } --close help horizontal aligner    
-        }  --close vol/pan/fx column   
+            } --close help button
+          } --close help horizontal aligner
+        }  --close vol/pan/fx column
       } --close 2nd row
     } --close window_content column
-    
-    --[=[if debugvars.extra_curve_controls then    
+
+    --[=[if debugvars.extra_curve_controls then
       local debugcurvecontrols = vb:column {
-        
+
         vb:horizontal_aligner { --aligns in column
           mode = "center",
-        
-          vb:switch { 
-            id = "curve_type_selector", 
+
+          vb:switch {
+            id = "curve_type_selector",
             height = 16,
             width = 32,
             tooltip = "Curve Type",
             items = {"1","2"},
             value = 1,
-            notifier = function(value)              
+            notifier = function(value)
               if vb_notifiers_on then
                 curve_type[1] = value
                 update_curve_display(1)
                 queue_processing()
               end
-            end 
+            end
           }
         },
-          
+
         vb:horizontal_aligner { --aligns in column
           mode = "center",
-          
-          vb:switch { 
-            id = "drawing_mode", 
+
+          vb:switch {
+            id = "drawing_mode",
             height = 16,
             width = 32,
             tooltip = "Drawing Mode",
             items = {"Point","Line"},
             value = 2,
-            notifier = function(value)              
+            notifier = function(value)
               if vb_notifiers_on then
                 if value == 1 then
                   drawmode = "point"
@@ -3849,13 +3849,13 @@ local function show_window()
                 update_all_curve_displays()
                 queue_processing()
               end
-            end 
+            end
           }
         },
-        
+
         vb:horizontal_aligner { --aligns in column
           mode = "center",
-          
+
           vb:valuefield {
             id = "samplesize_text",
             tooltip = "Type exact sample size values here!",
@@ -3863,8 +3863,8 @@ local function show_window()
             min = 1,
             max = 256,
             value = 1,
-            
-            --tonumber converts any typed-in user input to a number value 
+
+            --tonumber converts any typed-in user input to a number value
             --(called only if value was typed)
             tonumber = function(str)
               local val = str:gsub("[^0-9.-]", "") --filter string to get numbers and decimals
@@ -3876,109 +3876,109 @@ local function show_window()
               end
               return val
             end,
-            
-            --tostring is called when field is clicked, 
+
+            --tostring is called when field is clicked,
             --after tonumber is called,
             --and after the notifier is called
             --it converts the value to a formatted string to be displayed
             tostring = function(value)
               return ("%i pts"):format(value)
-            end,        
-            
+            end,
+
             --notifier is called whenever the value is changed
             notifier = function(value)
             end
           } --close view item
         } --close aligner
       } --close column
-      
+
       vb.views.curve_column:add_child(debugcurvecontrols)
-      
-    end --end "if debugvars.extra_curve_controls"]=] 
+
+    end --end "if debugvars.extra_curve_controls"]=]
   end --end "if not window_content" statement
-    
-  
+
+
   --key handler function (any unused modifiers/key states/etc will be commented out in case needed later)
   local function key_handler(dialog,key)
-  
+
     local handled = true
-  
+
     if key.state == "pressed" then
-      
+
       if not key.repeated then
-      
+
         if key.modifiers == "" then
           if key.name == "esc" then dialog:close()
-          elseif key.name == "space" then space_key()         
+          elseif key.name == "space" then space_key()
           elseif key.name == "up" then up_key()
           elseif key.name == "down" then down_key()
           elseif key.name == "left" then left_key()
           elseif key.name == "right" then right_key()
           elseif key.name == "tab" then tab_key()
           else handled = false end
-      
+
         elseif key.modifiers == "shift" then
           if key.name == "space" then shift_space_key()
           elseif key.name == "tab" then shift_tab_key()
-          elseif key.name == "up" then 
+          elseif key.name == "up" then
             mod_arrow_key(
               vb.views.offset_slider,
               vb.views.offset_multiplier_rotary,
               3.9063
-            ) 
-          elseif key.name == "down" then 
+            )
+          elseif key.name == "down" then
             mod_arrow_key(
               vb.views.offset_slider,
               vb.views.offset_multiplier_rotary,
               -3.9063
-            ) 
+            )
           else handled = false end
-        
+
         elseif key.modifiers == "alt" then
-          if key.name == "up" then 
+          if key.name == "up" then
             mod_arrow_key(
               vb.views.curve_slider,
               nil,
               1
             )
-      
-          elseif key.name == "down" then 
+
+          elseif key.name == "down" then
             mod_arrow_key(
               vb.views.curve_slider,
               nil,
               -1
             )
-      
+
           elseif key.name == "left" then
             alt_left()
-      
+
           elseif key.name == "right" then
             alt_right()
-      
+
           else handled = false end
-        
+
         elseif key.modifiers == "control" then
           if key.name == "z" then return
           elseif key.name == "y" then return
           elseif key.name == "space" then space_key()
-          elseif key.name == "up" then 
+          elseif key.name == "up" then
             mod_arrow_key(
               vb.views.time_slider,
               vb.views.time_multiplier_rotary,
               1
             )
-          
-          elseif key.name == "down" then 
+
+          elseif key.name == "down" then
             mod_arrow_key(
               vb.views.time_slider,
               vb.views.time_multiplier_rotary,
               -1
             )
-      
+
           else handled = false end
-        
+
         --elseif key.modifiers == "shift + alt" then
-        
+
         elseif key.modifiers == "shift + control" then
           if key.name == "z" then return
           elseif key.name == "o" then toggle_overflow_mode()
@@ -3989,7 +3989,7 @@ local function show_window()
           elseif key.name == "left" then change_wild_collision_mode(false)
           elseif key.name == "right" then change_wild_collision_mode(true)
           else handled = false end
-        
+
         elseif key.modifiers == "alt + control" then
           if key.name == "left" then change_anchor(1, nil)
           elseif key.name == "right" then change_anchor(2, nil)
@@ -3997,11 +3997,11 @@ local function show_window()
           elseif key.name == "down" then change_anchor(nil, 1)
           else handled = false end
         --elseif key.modifiers == "shift + alt + control" then
-        
+
         end
-      
+
       elseif key.repeated then
-      
+
         if key.modifiers == "" then
           if key.name == "up" then up_key()
           elseif key.name == "down" then down_key()
@@ -4009,126 +4009,126 @@ local function show_window()
           elseif key.name == "right" then right_key()
           elseif key.name == "tab" then tab_key()
           else handled = false end
-        
+
         elseif key.modifiers == "shift" then
           if key.name == "tab" then shift_tab_key()
-          elseif key.name == "up" then 
+          elseif key.name == "up" then
             mod_arrow_key(
               vb.views.offset_slider,
               vb.views.offset_multiplier_rotary,
               3.9063,
               true
             )
-          
-          elseif key.name == "down" then 
+
+          elseif key.name == "down" then
             mod_arrow_key(
               vb.views.offset_slider,
               vb.views.offset_multiplier_rotary,
               -3.9063,
               true
             )
-      
+
           else handled = false end
-        
+
         elseif key.modifiers == "alt" then
-          if key.name == "up" then 
+          if key.name == "up" then
             mod_arrow_key(
               vb.views.curve_slider,
               nil,
               1,
               true
             )
-          
-          elseif key.name == "down" then 
+
+          elseif key.name == "down" then
             mod_arrow_key(
               vb.views.curve_slider,
               nil,
               -1,
               true
             )
-      
+
           else handled = false end
-        
+
         elseif key.modifiers == "control" then
           if key.name == "z" then return
           elseif key.name == "y" then return
-          elseif key.name == "up" then 
+          elseif key.name == "up" then
             mod_arrow_key(
               vb.views.time_slider,
               vb.views.time_multiplier_rotary,
               1,
               true
             )
-          
-          elseif key.name == "down" then 
+
+          elseif key.name == "down" then
             mod_arrow_key(
               vb.views.time_slider,
               vb.views.time_multiplier_rotary,
               -1,
               true
             )
-      
+
           else handled = false end
-        
+
         -- elseif key.modifiers == "shift + alt" then
-        
+
         elseif key.modifiers == "shift + control" then
           if key.name == "z" then return
         else handled = false end
-        
+
         --elseif key.modifiers == "alt + control" then
-        
+
         --elseif key.modifiers == "shift + alt + control" then
-        
+
         end
-      
+
       end --end if key.repeated / not key.repeated
-      
+
     --elseif key.state == "released" then
-    
+
       --if key.modifiers == "" then
-      
+
       --elseif key.modifiers == "shift" then
-      
+
       --elseif key.modifiers == "alt" then
-      
+
       --elseif key.modifiers == "control" then
-      
+
       --elseif key.modifiers == "shift + alt" then
-      
+
       --elseif key.modifiers == "shift + control" then
-      
+
       --elseif key.modifiers == "alt + control" then
-      
+
       --elseif key.modifiers == "shift + alt + control" then
-      
+
       --end
-      
+
     end --end if key.state == "pressed"/"released"
-  
+
     if not handled then return key end
   end --end key_handler()
-  
+
   --key handler options
   local key_handler_options = {
     send_key_repeat = true,
     send_key_release = true
   }
-  
-  get_theme_data()  
+
+  get_theme_data()
   set_theme_colors()
-  
+
   --create the dialog if it show the dialog window
   if not window_obj or not window_obj.visible then
     window_obj = app:show_custom_dialog("Reform", window_content, key_handler, key_handler_options)
   else window_obj:show() end
-  
+
   return true
 end
 
 --REFORM SELECTION-----------------------------------------------
 local function reform_main()
-      
+
   local result = reset_variables()
   if result then result = add_document_notifiers() end
   if result then result = get_selection() end
@@ -4149,15 +4149,15 @@ end
 
 --RESTORE REFORM WINDOW----------------------------------------------------
 local function restore_reform_window()
-  if valid_selection then 
-    show_window() 
+  if valid_selection then
+    show_window()
     update_all_controls()
   end
 end
 
 --STRUMIFY LINE AT EDIT CURSOR----------------------------------------------
 local function strumify_line_at_edit_cursor()
-  
+
   local result = reset_variables()
   if result then result = add_document_notifiers() end
   if result then result = select_line_at_edit_cursor() end
@@ -4175,52 +4175,52 @@ local function strumify_line_at_edit_cursor()
   if result then result = reset_view() end
   if result then result = strumify() end
 
-  return true  
+  return true
 end
 
---MENU/HOTKEY ENTRIES-------------------------------------------------------------------------------- 
+--MENU/HOTKEY ENTRIES--------------------------------------------------------------------------------
 
 renoise.tool():add_menu_entry {
-  name = "Pattern Editor:Reform:Reform Selected Notes...", 
+  name = "Pattern Editor:Reform:Reform Selected Notes...",
   invoke = function() reform_main() end
 }
 
 renoise.tool():add_menu_entry {
-  name = "Pattern Editor:Reform:Restore Reform Window", 
+  name = "Pattern Editor:Reform:Restore Reform Window",
   invoke = function() restore_reform_window() end
 }
 
 renoise.tool():add_menu_entry {
-  name = "Pattern Editor:Reform:Strumify Line at Edit Cursor...", 
+  name = "Pattern Editor:Reform:Strumify Line at Edit Cursor...",
   invoke = function() strumify_line_at_edit_cursor() end
 }
 
 renoise.tool():add_menu_entry {
-  name = "Main Menu:Tools:Reform:Reform Selected Notes...", 
+  name = "Main Menu:Tools:Reform:Reform Selected Notes...",
   invoke = function() reform_main() end
 }
 
 renoise.tool():add_menu_entry {
-  name = "Main Menu:Tools:Reform:Restore Reform Window", 
+  name = "Main Menu:Tools:Reform:Restore Reform Window",
   invoke = function() restore_reform_window() end
 }
 
 renoise.tool():add_menu_entry {
-  name = "Main Menu:Tools:Reform:Strumify Line at Edit Cursor...", 
+  name = "Main Menu:Tools:Reform:Strumify Line at Edit Cursor...",
   invoke = function() strumify_line_at_edit_cursor() end
 }
 
 renoise.tool():add_keybinding {
-  name = "Pattern Editor:Selection:Reform Selected Notes...", 
+  name = "Pattern Editor:Selection:Reform Selected Notes...",
   invoke = function(repeated) if not repeated then reform_main() end end
 }
 
 renoise.tool():add_keybinding {
-  name = "Pattern Editor:Selection:Restore Reform Window", 
+  name = "Pattern Editor:Selection:Restore Reform Window",
   invoke = function(repeated) if not repeated then restore_reform_window() end end
 }
 
 renoise.tool():add_keybinding {
-  name = "Pattern Editor:Selection:Strumify Line at Edit Cursor...", 
+  name = "Pattern Editor:Selection:Strumify Line at Edit Cursor...",
   invoke = function(repeated) if not repeated then strumify_line_at_edit_cursor() end end
 }
