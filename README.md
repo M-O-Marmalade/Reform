@@ -1,9 +1,12 @@
 # Reform
 
-A [Renoise](https://www.renoise.com/products/renoise) tool to transform selections of notes quickly and powerfully.
+[![Website]][lt_website]
 
-[Official Website](https://www.aqu.surf/reform)
+A [Renoise](https://www.renoise.com/products/renoise) tool with the ability to apply complex 2D transformations to selections of MIDI notes.
 
-[**Download**](https://www.renoise.com/tools/reform)
+<!---------------->
+
+[Website]: https://custom-icon-badges.demolab.com/badge/Official_Website-0087ff?style=for-the-badge&logoColor=white&logo=globe
+[lt_website]: https://aqu.surf/reform
 
 ![Reform Demo](Artwork/reform-demo.apng)
