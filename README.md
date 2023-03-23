@@ -11,6 +11,9 @@ A [Renoise](https://www.renoise.com/products/renoise) tool with the ability to a
 
 ![Reform Demo](Artwork/reform-demo.apng)
 
+## Purpose
+Being a tracker, Renoise keeps notes quantized to a grid (16th notes by default). To place notes off of that grid (e.g. to create a strum), Delay values must be tediously typed for each note. Reform performs granular 2D transformations on selections of notes, so that unquantized MIDI sequences can be made in a matter of seconds, instead of minutes.
+
 ## Installation
 1. Download the [latest release](https://www.renoise.com/sites/default/files/tools/mom.MOMarmalade.Reform-V1.2-R3.3-L6.1.xrnx).
 2. [Install Renoise](https://www.renoise.com/download) if you don't already have it.
